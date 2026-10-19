@@ -647,6 +647,93 @@ class IrisEngineController extends ChangeNotifier {
     return 0.0;
   }
 
+  // --- Phase 3: 3D LUT Color Grading ---
+  LutPresetModel get lutPreset => _project.lutPreset;
+  double get lutIntensity => _project.lutIntensity;
+  String? get customCubeLutPath => _project.customCubeLutPath;
+
+  void setLutPreset(LutPresetModel preset) {
+    _project.lutPreset = preset;
+    notifyListeners();
+  }
+
+  void setLutIntensity(double intensity) {
+    _project.lutIntensity = intensity.clamp(0.0, 1.0);
+    notifyListeners();
+  }
+
+  void importCustomCubeLut(String path) {
+    _project.customCubeLutPath = path;
+    _project.lutPreset = LutPresetModel.customCube;
+    notifyListeners();
+  }
+
+  // --- Phase 3: RGB Curves ---
+  RgbCurvesModel get curves => _project.curves;
+
+  void setCurvePoints(String channel, List<RgbCurvePointModel> points) {
+    if (channel == 'master') {
+      _project.curves.master = List.from(points);
+    } else if (channel == 'red') {
+      _project.curves.red = List.from(points);
+    } else if (channel == 'green') {
+      _project.curves.green = List.from(points);
+    } else if (channel == 'blue') {
+      _project.curves.blue = List.from(points);
+    }
+    notifyListeners();
+  }
+
+  void resetCurves() {
+    _project.curves = RgbCurvesModel();
+    notifyListeners();
+  }
+
+  // --- Phase 3: Audio Ducking ---
+  AudioDuckerModel get ducker => _project.ducker;
+
+  void toggleAudioDucking(bool enabled) {
+    _project.ducker.isEnabled = enabled;
+    notifyListeners();
+  }
+
+  void updateAudioDucking({
+    double? thresholdDb,
+    double? duckAttenuationDb,
+    double? attackMs,
+    double? holdMs,
+    double? releaseMs,
+    String? dialogueTrackId,
+  }) {
+    if (thresholdDb != null) _project.ducker.thresholdDb = thresholdDb;
+    if (duckAttenuationDb != null) {
+      _project.ducker.duckAttenuationDb = duckAttenuationDb;
+    }
+    if (attackMs != null) _project.ducker.attackMs = attackMs;
+    if (holdMs != null) _project.ducker.holdMs = holdMs;
+    if (releaseMs != null) _project.ducker.releaseMs = releaseMs;
+    if (dialogueTrackId != null) {
+      _project.ducker.dialogueTrackId = dialogueTrackId;
+    }
+    notifyListeners();
+  }
+
+  // --- Phase 3: Color Scopes ---
+  ColorScopeMode get scopeMode => _project.scopeMode;
+
+  void setColorScopeMode(ColorScopeMode mode) {
+    _project.scopeMode = mode;
+    notifyListeners();
+  }
+
+  // --- Phase 3: Pitch Preservation ---
+  void toggleClipPitchPreservation(bool preserve) {
+    if (_selectedClip != null) {
+      _selectedClip!.preservePitch = preserve;
+      notifyListeners();
+    }
+  }
+
   // --- Stream Copy Optimization ---
   double get streamCopyPercentage {
     final vTracks = _project.tracks

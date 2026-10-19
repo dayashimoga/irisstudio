@@ -76,6 +76,59 @@ class VideoWorkspace extends StatelessWidget {
       color: IrisTheme.background,
       child: Column(
         children: [
+          // Color Scopes Selector Bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            decoration: const BoxDecoration(
+              color: IrisTheme.surfaceDark,
+              border: Border(bottom: BorderSide(color: IrisTheme.border)),
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  const Icon(Icons.analytics_outlined, size: 14, color: IrisTheme.textMuted),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'SCOPES:',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: IrisTheme.textMuted,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Wrap(
+                    spacing: 4,
+                    children: [
+                    ColorScopeMode.none,
+                    ColorScopeMode.waveform,
+                    ColorScopeMode.vectorscope,
+                    ColorScopeMode.rgbParade,
+                  ].map((mode) {
+                    final label = switch (mode) {
+                      ColorScopeMode.none => 'Off',
+                      ColorScopeMode.waveform => 'Waveform',
+                      ColorScopeMode.vectorscope => 'Vectorscope',
+                      ColorScopeMode.rgbParade => 'RGB Parade',
+                    };
+                    final isSelected = controller.scopeMode == mode;
+                    return ChoiceChip(
+                      label: Text(label, style: const TextStyle(fontSize: 10)),
+                      selected: isSelected,
+                      backgroundColor: IrisTheme.surfaceLight,
+                      selectedColor: IrisTheme.primaryCyan.withValues(alpha: 0.25),
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (_) => controller.setColorScopeMode(mode),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+            ),
+          ),
+
           // Viewport Preview Canvas
           Expanded(
             child: Center(
@@ -104,6 +157,36 @@ class VideoWorkspace extends StatelessWidget {
                           subtitles: controller.project.subtitles,
                         ),
                       ),
+
+                      // Real-time Diagnostic Scope Overlay PIP
+                      if (controller.scopeMode != ColorScopeMode.none)
+                        Positioned(
+                          top: 12,
+                          right: 12,
+                          width: 220,
+                          height: 140,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xE60F121A),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: IrisTheme.primaryCyan.withValues(alpha: 0.5),
+                              ),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Colors.black87,
+                                  blurRadius: 8,
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(5),
+                              child: CustomPaint(
+                                painter: _ColorScopePainter(scopeMode: controller.scopeMode),
+                              ),
+                            ),
+                          ),
+                        ),
 
                       // Timecode Stamp Overlay
                       Positioned(
@@ -400,6 +483,166 @@ class VideoWorkspace extends StatelessWidget {
           const Divider(height: 1),
           const SizedBox(height: 16),
 
+          // 3D LUT Color Grading
+          const Text(
+            '3D LUT COLOR GRADING',
+            style: TextStyle(
+              color: IrisTheme.textMuted,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              LutPresetModel.none,
+              LutPresetModel.tealAndOrange,
+              LutPresetModel.warmVintage,
+              LutPresetModel.bleachBypass,
+              LutPresetModel.fadedFilm,
+              LutPresetModel.monochromeContrast,
+            ].map((preset) {
+              final label = switch (preset) {
+                LutPresetModel.none => 'None',
+                LutPresetModel.tealAndOrange => 'Teal & Orange',
+                LutPresetModel.warmVintage => 'Warm Vintage',
+                LutPresetModel.bleachBypass => 'Bleach Bypass',
+                LutPresetModel.fadedFilm => 'Faded Film',
+                LutPresetModel.monochromeContrast => 'Monochrome',
+                LutPresetModel.customCube => 'Custom .cube',
+              };
+              final isSelected = controller.lutPreset == preset;
+              return ChoiceChip(
+                selected: isSelected,
+                label: Text(label, style: const TextStyle(fontSize: 10)),
+                backgroundColor: IrisTheme.surfaceLight,
+                selectedColor: IrisTheme.primaryCyan.withValues(alpha: 0.25),
+                onSelected: (_) => controller.setLutPreset(preset),
+              );
+            }).toList(),
+          ),
+          if (controller.lutPreset != LutPresetModel.none) ...[
+            const SizedBox(height: 8),
+            _buildInspectorSlider(
+              label: 'LUT Intensity',
+              value: controller.lutIntensity * 100.0,
+              min: 0.0,
+              max: 100.0,
+              unit: '%',
+              onChanged: (val) => controller.setLutIntensity(val / 100.0),
+            ),
+          ],
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.palette_outlined, size: 12),
+            label: const Text('Import .cube LUT', style: TextStyle(fontSize: 10)),
+            style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              foregroundColor: IrisTheme.textSecondary,
+              side: const BorderSide(color: IrisTheme.border),
+            ),
+            onPressed: () {
+              controller.importCustomCubeLut('custom_cinematic.cube');
+            },
+          ),
+
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // Parametric RGB Curves
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Expanded(
+                child: Text(
+                  'PARAMETRIC RGB CURVES',
+                  style: TextStyle(
+                    color: IrisTheme.textMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              TextButton(
+                onPressed: () => controller.resetCurves(),
+                child: const Text(
+                  'Reset',
+                  style: TextStyle(fontSize: 10, color: IrisTheme.primaryCyan),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            height: 90,
+            decoration: BoxDecoration(
+              color: IrisTheme.surfaceLight,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: IrisTheme.border),
+            ),
+            child: CustomPaint(
+              painter: _RgbCurvesPainter(curves: controller.curves),
+              size: Size.infinite,
+            ),
+          ),
+
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // Audio Ducking (Sidechain)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Expanded(
+                child: Text(
+                  'AUDIO DUCKING (SIDECHAIN)',
+                  style: TextStyle(
+                    color: IrisTheme.textMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Switch(
+                value: controller.ducker.isEnabled,
+                activeThumbColor: IrisTheme.primaryCyan,
+                onChanged: (val) => controller.toggleAudioDucking(val),
+              ),
+            ],
+          ),
+          if (controller.ducker.isEnabled) ...[
+            const SizedBox(height: 8),
+            _buildInspectorSlider(
+              label: 'Voice Threshold',
+              value: controller.ducker.thresholdDb,
+              min: -40.0,
+              max: -6.0,
+              unit: ' dB',
+              onChanged: (val) => controller.updateAudioDucking(thresholdDb: val),
+            ),
+            _buildInspectorSlider(
+              label: 'Duck Attenuation',
+              value: controller.ducker.duckAttenuationDb,
+              min: -30.0,
+              max: -3.0,
+              unit: ' dB',
+              onChanged: (val) => controller.updateAudioDucking(duckAttenuationDb: val),
+            ),
+          ],
+
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
           // Subtitles & Captions Track
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -589,6 +832,51 @@ class VideoWorkspace extends StatelessWidget {
               clip.opacity = val / 100.0;
               controller.updateClip(clip);
             },
+          ),
+
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // Speed & WSOLA Pitch Preservation Section
+          const Text(
+            'PLAYBACK SPEED & TIMING',
+            style: TextStyle(
+              color: IrisTheme.textMuted,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildInspectorSlider(
+            label: 'Speed',
+            value: clip.speed,
+            min: 0.25,
+            max: 4.0,
+            unit: 'x',
+            onChanged: (val) {
+              clip.speed = val;
+              controller.updateClip(clip);
+            },
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Expanded(
+                child: Text(
+                  'Preserve Pitch (WSOLA)',
+                  style: TextStyle(fontSize: 11, color: IrisTheme.textPrimary),
+                ),
+              ),
+              Checkbox(
+                value: clip.preservePitch,
+                activeColor: IrisTheme.primaryCyan,
+                onChanged: (val) {
+                  controller.toggleClipPitchPreservation(val ?? true);
+                },
+              ),
+            ],
           ),
 
           const SizedBox(height: 16),
@@ -1203,3 +1491,211 @@ class _WaveformMiniPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+
+class _ColorScopePainter extends CustomPainter {
+  final ColorScopeMode scopeMode;
+
+  _ColorScopePainter({required this.scopeMode});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bgPaint = Paint()..color = const Color(0xFF0F121A);
+    canvas.drawRect(Offset.zero & size, bgPaint);
+
+    final graticulePaint = Paint()
+      ..color = const Color(0xFF283446)
+      ..strokeWidth = 1.0;
+
+    switch (scopeMode) {
+      case ColorScopeMode.waveform:
+        _paintWaveform(canvas, size, graticulePaint);
+        break;
+      case ColorScopeMode.vectorscope:
+        _paintVectorscope(canvas, size, graticulePaint);
+        break;
+      case ColorScopeMode.rgbParade:
+        _paintRgbParade(canvas, size, graticulePaint);
+        break;
+      case ColorScopeMode.none:
+        break;
+    }
+  }
+
+  void _paintWaveform(Canvas canvas, Size size, Paint graticulePaint) {
+    for (final ire in [0.0, 0.25, 0.5, 0.75, 1.0]) {
+      final y = size.height * (1.0 - ire);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), graticulePaint);
+    }
+
+    final tracePaint = Paint()
+      ..color = const Color(0xFF40E082).withValues(alpha: 0.6)
+      ..strokeWidth = 1.2;
+
+    final path = Path();
+    for (double x = 0; x < size.width; x += 3) {
+      final wave = math.sin(x * 0.08) * 0.25 + math.cos(x * 0.04) * 0.15 + 0.5;
+      final y = (size.height * (1.0 - wave)).clamp(0.0, size.height);
+      if (x == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    canvas.drawPath(path, tracePaint..style = PaintingStyle.stroke);
+
+    _drawLabel(canvas, 'LUMA WAVEFORM', const Offset(6, 4));
+  }
+
+  void _paintVectorscope(Canvas canvas, Size size, Paint graticulePaint) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.min(size.width, size.height) * 0.42;
+
+    canvas.drawCircle(center, radius, graticulePaint..style = PaintingStyle.stroke);
+    canvas.drawLine(Offset(center.dx - radius, center.dy), Offset(center.dx + radius, center.dy), graticulePaint);
+    canvas.drawLine(Offset(center.dx, center.dy - radius), Offset(center.dx, center.dy + radius), graticulePaint);
+
+    final skinRad = 123.0 * math.pi / 180.0;
+    final skinEnd = Offset(center.dx - radius * math.cos(skinRad), center.dy - radius * math.sin(skinRad));
+    final skinPaint = Paint()
+      ..color = const Color(0xFFB48250)
+      ..strokeWidth = 1.0;
+    canvas.drawLine(center, skinEnd, skinPaint);
+
+    final tracePaint = Paint()
+      ..color = const Color(0xFF50DCA0).withValues(alpha: 0.5)
+      ..style = PaintingStyle.fill;
+    for (int i = 0; i < 40; i++) {
+      final angle = i * 0.35;
+      final r = (math.sin(i * 1.7).abs() * radius * 0.6);
+      canvas.drawCircle(
+        Offset(center.dx + r * math.cos(angle), center.dy + r * math.sin(angle)),
+        1.5,
+        tracePaint,
+      );
+    }
+
+    _drawLabel(canvas, 'VECTORSCOPE', const Offset(6, 4));
+  }
+
+  void _paintRgbParade(Canvas canvas, Size size, Paint graticulePaint) {
+    final subW = size.width / 3.0;
+
+    canvas.drawLine(Offset(subW, 0), Offset(subW, size.height), graticulePaint);
+    canvas.drawLine(Offset(subW * 2, 0), Offset(subW * 2, size.height), graticulePaint);
+
+    for (final ratio in [0.0, 0.5, 1.0]) {
+      final y = size.height * (1.0 - ratio);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), graticulePaint);
+    }
+
+    final colors = [
+      const Color(0xFFFF5050),
+      const Color(0xFF50FF64),
+      const Color(0xFF50A0FF),
+    ];
+
+    for (int ch = 0; ch < 3; ch++) {
+      final startX = ch * subW;
+      final path = Path();
+      for (double x = 0; x < subW; x += 3) {
+        final wave = math.sin((startX + x) * 0.1 + ch) * 0.3 + 0.5;
+        final y = (size.height * (1.0 - wave)).clamp(0.0, size.height);
+        if (x == 0) {
+          path.moveTo(startX + x, y);
+        } else {
+          path.lineTo(startX + x, y);
+        }
+      }
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = colors[ch].withValues(alpha: 0.7)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2,
+      );
+    }
+
+    _drawLabel(canvas, 'RGB PARADE', const Offset(6, 4));
+  }
+
+  void _drawLabel(Canvas canvas, String text, Offset offset) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+          color: IrisTheme.textMuted,
+          fontSize: 8,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.5,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, offset);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ColorScopePainter oldDelegate) =>
+      oldDelegate.scopeMode != scopeMode;
+}
+
+class _RgbCurvesPainter extends CustomPainter {
+  final RgbCurvesModel curves;
+
+  _RgbCurvesPainter({required this.curves});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bgPaint = Paint()..color = const Color(0xFF141822);
+    canvas.drawRect(Offset.zero & size, bgPaint);
+
+    final gridPaint = Paint()
+      ..color = const Color(0xFF242C3C)
+      ..strokeWidth = 1.0;
+
+    canvas.drawLine(Offset(0, size.height), Offset(size.width, 0), gridPaint);
+    for (final frac in [0.25, 0.5, 0.75]) {
+      final x = size.width * frac;
+      final y = size.height * frac;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    _drawSplineCurve(canvas, size, curves.master, Colors.white.withValues(alpha: 0.85));
+    _drawSplineCurve(canvas, size, curves.red, const Color(0xFFFF5050).withValues(alpha: 0.7));
+    _drawSplineCurve(canvas, size, curves.green, const Color(0xFF50FF64).withValues(alpha: 0.7));
+    _drawSplineCurve(canvas, size, curves.blue, const Color(0xFF50A0FF).withValues(alpha: 0.7));
+  }
+
+  void _drawSplineCurve(Canvas canvas, Size size, List<RgbCurvePointModel> points, Color color) {
+    if (points.isEmpty) return;
+    final path = Path();
+    for (int i = 0; i < points.length; i++) {
+      final px = points[i].x * size.width;
+      final py = (1.0 - points[i].y) * size.height;
+      if (i == 0) {
+        path.moveTo(px, py);
+      } else {
+        path.lineTo(px, py);
+      }
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+
+    final dotPaint = Paint()..color = color;
+    for (final pt in points) {
+      final px = pt.x * size.width;
+      final py = (1.0 - pt.y) * size.height;
+      canvas.drawCircle(Offset(px, py), 2.5, dotPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RgbCurvesPainter oldDelegate) => true;
+}
+

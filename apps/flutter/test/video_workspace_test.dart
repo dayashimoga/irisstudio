@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iris_studio/bridge/iris_engine_controller.dart';
+import 'package:iris_studio/models/project_model.dart';
 import 'package:iris_studio/theme/iris_theme.dart';
 import 'package:iris_studio/workspaces/video_workspace.dart';
 
@@ -55,6 +56,35 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Test Video Caption'), findsAtLeastNWidgets(1));
 
+    // Phase 3: Verify 3D LUT Color Grading
+    await tester.ensureVisible(find.text('3D LUT COLOR GRADING'));
+    expect(find.text('3D LUT COLOR GRADING'), findsOneWidget);
+    await tester.tap(find.text('Teal & Orange'));
+    await tester.pumpAndSettle();
+    expect(controller.lutPreset, LutPresetModel.tealAndOrange);
+    expect(find.text('LUT Intensity'), findsOneWidget);
+
+    // Phase 3: Verify Parametric RGB Curves
+    await tester.ensureVisible(find.text('PARAMETRIC RGB CURVES'));
+    expect(find.text('PARAMETRIC RGB CURVES'), findsOneWidget);
+
+    // Phase 3: Verify Audio Ducking
+    await tester.ensureVisible(find.text('AUDIO DUCKING (SIDECHAIN)'));
+    expect(find.text('AUDIO DUCKING (SIDECHAIN)'), findsOneWidget);
+    controller.toggleAudioDucking(true);
+    await tester.pumpAndSettle();
+    expect(controller.ducker.isEnabled, isTrue);
+    expect(find.text('Voice Threshold'), findsOneWidget);
+
+    // Phase 3: Verify Color Scopes bar
+    expect(find.text('SCOPES:'), findsOneWidget);
+    await tester.tap(find.text('Waveform'));
+    await tester.pumpAndSettle();
+    expect(controller.scopeMode, ColorScopeMode.waveform);
+    await tester.tap(find.text('Vectorscope'));
+    await tester.pumpAndSettle();
+    expect(controller.scopeMode, ColorScopeMode.vectorscope);
+
     // 5. Select a clip on the timeline
     final clipText = find.text('Golden Hour Intro.mp4');
     expect(clipText, findsOneWidget);
@@ -64,6 +94,8 @@ void main() {
     // Verify Clip Inspector opened
     expect(find.text('CLIP INSPECTOR'), findsOneWidget);
     expect(find.text('SPATIAL TRANSFORM'), findsOneWidget);
+    expect(find.text('PLAYBACK SPEED & TIMING'), findsOneWidget);
+    expect(find.text('Preserve Pitch (WSOLA)'), findsOneWidget);
     expect(find.text('KEYFRAME EASING CURVE'), findsOneWidget);
     expect(find.text('TRANSITIONS (EXTENDED PRESETS)'), findsOneWidget);
 

@@ -1,14 +1,15 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 use iris_audio::{
-    generate_waveform_peaks, AudioCompressor, EqualizerBand, ThreeBandEq, WaveformPeak,
+    generate_waveform_peaks, AudioCompressor, AudioDucker, DuckingParameters, EqualizerBand,
+    ThreeBandEq, WaveformPeak, WsolaTimeStretch,
 };
 use iris_cache::{CacheManager, MemoryBudgetTier};
-use iris_core::{Dimensions, Point, RationalTime, Rect};
+use iris_core::{Dimensions, PixelFormat, Point, RationalTime, Rect};
 use iris_effects::{
     apply_adjustments, apply_brush_stroke, apply_clone_stamp, apply_denoise, apply_gaussian_blur,
     apply_heal_brush, apply_levels, apply_red_eye_removal, apply_unsharp_mask, apply_vignette,
-    AdjustmentParameters, LevelsParameters,
+    AdjustmentParameters, LevelsParameters, Lut3D, LutPreset, RgbCurves, SplinePoint,
 };
 use iris_export::{
     validate_exported_media, BatchPhotoProcessor, BatchPhotoTask, ExportPreset, StreamCopyOptimizer,
@@ -18,8 +19,11 @@ use iris_images::{
     decode_image, encode_jpeg, encode_png, encode_webp, flip_horizontal, flip_vertical,
     resize_bilinear, rotate_90, straighten_image, RgbaImage,
 };
+use iris_media::VideoFrame;
 use iris_projects::{CrashJournal, Project, UndoRedoManager};
-use iris_render::{MockSourceResolver, PreviewEngine};
+use iris_render::{
+    render_rgb_parade, render_vectorscope, render_waveform, MockSourceResolver, PreviewEngine,
+};
 use iris_timeline::{
     Clip, RippleDeleteCommand, SplitClipCommand, SubtitleItem, SubtitleTrack, Track, TrackKind,
     Transition, TransitionKind,
@@ -1145,5 +1149,213 @@ pub extern "C" fn iris_export_analyze_stream_copy(
     if !out_speedup_factor.is_null() {
         unsafe { *out_speedup_factor = plan.estimated_speedup };
     }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_lut_apply_preset(
+    pixels: *mut u8,
+    len: usize,
+    preset_idx: c_int,
+    intensity: f32,
+) -> c_int {
+    if pixels.is_null() || len == 0 || !len.is_multiple_of(4) {
+        return -1;
+    }
+    let preset = match preset_idx {
+        0 => LutPreset::TealAndOrange,
+        1 => LutPreset::WarmVintage,
+        2 => LutPreset::BleachBypass,
+        3 => LutPreset::FadedFilm,
+        _ => LutPreset::MonochromeContrast,
+    };
+    let lut = Lut3D::preset(preset);
+    let px = unsafe { slice::from_raw_parts_mut(pixels, len) };
+    lut.apply_rgba(px, intensity);
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_lut_apply_cube(
+    pixels: *mut u8,
+    len: usize,
+    cube_content: *const c_char,
+    intensity: f32,
+) -> c_int {
+    if pixels.is_null() || len == 0 || !len.is_multiple_of(4) || cube_content.is_null() {
+        return -1;
+    }
+    let c_str = unsafe { CStr::from_ptr(cube_content) };
+    let content = match c_str.to_str() {
+        Ok(s) => s,
+        Err(_) => return -2,
+    };
+    let lut = match Lut3D::parse_cube(content) {
+        Ok(l) => l,
+        Err(_) => return -3,
+    };
+    let px = unsafe { slice::from_raw_parts_mut(pixels, len) };
+    lut.apply_rgba(px, intensity);
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_curves_apply_rgb(
+    pixels: *mut u8,
+    len: usize,
+    master_pts: *const f32,
+    master_count: usize,
+    r_pts: *const f32,
+    r_count: usize,
+    g_pts: *const f32,
+    g_count: usize,
+    b_pts: *const f32,
+    b_count: usize,
+) -> c_int {
+    if pixels.is_null() || len == 0 || !len.is_multiple_of(4) {
+        return -1;
+    }
+
+    let parse_pts = |ptr: *const f32, count: usize| -> Vec<SplinePoint> {
+        if ptr.is_null() || count == 0 {
+            return vec![
+                SplinePoint { x: 0.0, y: 0.0 },
+                SplinePoint { x: 1.0, y: 1.0 },
+            ];
+        }
+        let s = unsafe { slice::from_raw_parts(ptr, count * 2) };
+        s.chunks_exact(2)
+            .map(|chunk| SplinePoint {
+                x: chunk[0],
+                y: chunk[1],
+            })
+            .collect()
+    };
+
+    let m_points = parse_pts(master_pts, master_count);
+    let r_points = parse_pts(r_pts, r_count);
+    let g_points = parse_pts(g_pts, g_count);
+    let b_points = parse_pts(b_pts, b_count);
+
+    let curves = RgbCurves::new(m_points, r_points, g_points, b_points);
+    let px = unsafe { slice::from_raw_parts_mut(pixels, len) };
+    curves.apply_rgba(px);
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_audio_time_stretch(
+    samples: *const f32,
+    sample_count: usize,
+    channels: c_int,
+    sample_rate: c_int,
+    speed_ratio: f32,
+    out_ptr: *mut *mut f32,
+    out_len: *mut usize,
+) -> c_int {
+    if samples.is_null() || sample_count == 0 || out_ptr.is_null() || out_len.is_null() {
+        return -1;
+    }
+    let ch = channels.max(1) as usize;
+    let sr = sample_rate.max(8000) as u32;
+    let wsola = WsolaTimeStretch::new(sr, ch);
+    let in_slice = unsafe { slice::from_raw_parts(samples, sample_count) };
+    let stretched = wsola.process(in_slice, speed_ratio);
+
+    let len = stretched.len();
+    let mut boxed = stretched.into_boxed_slice();
+    let ptr = boxed.as_mut_ptr();
+    std::mem::forget(boxed);
+
+    unsafe {
+        *out_ptr = ptr;
+        *out_len = len;
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_audio_buffer_free(ptr: *mut f32, len: usize) {
+    if !ptr.is_null() && len > 0 {
+        unsafe {
+            let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len));
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn iris_audio_duck_music(
+    dialogue_samples: *const f32,
+    music_samples: *mut f32,
+    sample_count: usize,
+    channels: c_int,
+    sample_rate: c_int,
+    threshold_db: f32,
+    attenuation_db: f32,
+) -> c_int {
+    if dialogue_samples.is_null() || music_samples.is_null() || sample_count == 0 {
+        return -1;
+    }
+    let ch = channels.max(1) as usize;
+    let sr = sample_rate.max(8000) as u32;
+    let mut ducker = AudioDucker::new(
+        sr,
+        DuckingParameters {
+            threshold_db,
+            duck_attenuation_db: attenuation_db,
+            attack_ms: 20.0,
+            hold_ms: 300.0,
+            release_ms: 450.0,
+        },
+    );
+    let diag = unsafe { slice::from_raw_parts(dialogue_samples, sample_count) };
+    let music = unsafe { slice::from_raw_parts_mut(music_samples, sample_count) };
+    ducker.process_interleaved(diag, music, ch);
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_scopes_render(
+    src_pixels: *const u8,
+    src_w: u32,
+    src_h: u32,
+    scope_kind: c_int, // 0 = Waveform, 1 = Vectorscope, 2 = RGB Parade
+    out_w: u32,
+    out_h: u32,
+    out_pixels: *mut u8,
+) -> c_int {
+    if src_pixels.is_null()
+        || out_pixels.is_null()
+        || src_w == 0
+        || src_h == 0
+        || out_w == 0
+        || out_h == 0
+    {
+        return -1;
+    }
+
+    let src_slice = unsafe { slice::from_raw_parts(src_pixels, (src_w * src_h * 4) as usize) };
+    let src_frame = VideoFrame::from_raw(
+        Dimensions::new(src_w, src_h),
+        PixelFormat::Rgba8,
+        RationalTime::new(0, 30),
+        RationalTime::new(1, 30),
+        src_slice.to_vec(),
+    );
+
+    let scope_frame = match scope_kind {
+        0 => render_waveform(&src_frame, out_w, out_h),
+        1 => render_vectorscope(&src_frame, out_w.min(out_h)),
+        2 => render_rgb_parade(&src_frame, out_w, out_h),
+        _ => return -2,
+    };
+
+    let out_slice = unsafe {
+        slice::from_raw_parts_mut(
+            out_pixels,
+            (scope_frame.dimensions.width * scope_frame.dimensions.height * 4) as usize,
+        )
+    };
+    out_slice.copy_from_slice(&scope_frame.data);
     0
 }

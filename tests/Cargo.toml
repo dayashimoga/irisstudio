@@ -49,3 +49,7 @@ path = "batch_export_test.rs"
 name = "video_pipeline_test"
 path = "video_pipeline_test.rs"
 
+[[test]]
+name = "color_grading_test"
+path = "color_grading_test.rs"
+

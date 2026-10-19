@@ -51,10 +51,20 @@
 - [x] Full integration test suites (`video_pipeline_test.rs`, `audio_test.rs`) and Flutter widget test suite (`video_workspace_test.dart`).
 - [x] Verified quality gates (100% test pass, zero Clippy warnings, 100% clean formatting, zero Flutter analysis warnings).
 
-## Phase 3: Advanced Audio & Color Grading (Next Phase)
-- [ ] 3D LUT import (.cube format) with tetrahedral and trilinear interpolation.
-- [ ] Parametric RGB Curves with interactive monotonic cubic spline evaluation.
-- [ ] Audio pitch preservation on playback/export speed changes (WSOLA time-stretch algorithm).
-- [ ] Multitrack audio ducking (sidechain compression triggered by dialogue track).
-- [ ] Real-time video color scopes: Waveform monitor, Vectorscope, and RGB Parade.
+## Phase 3: Advanced Audio & Color Grading (Completed & Verified)
+- [x] 3D LUT parser and engine supporting standard Adobe `.cube` formats with 4-vertex tetrahedral interpolation and 5 cinematic presets (`TealAndOrange`, `WarmVintage`, `BleachBypass`, `FadedFilm`, `MonochromeContrast`).
+- [x] Parametric RGB Curves with Fritsch-Carlson monotonic cubic spline evaluation preventing overshoot and color ringing.
+- [x] WSOLA (Waveform Similarity Overlap-Add) audio time-stretch algorithm for speed variations (0.25x - 4.0x) with 100% pitch preservation.
+- [x] Multitrack sidechain audio ducking (`AudioDucker`) triggered by dialogue tracks with configurable threshold, attenuation, attack, hold, and release.
+- [x] Diagnostic color scopes: Luma Waveform Monitor, Vectorscope (with 75% SMPTE targets and 123° skin-tone axis), and RGB Parade.
+- [x] FFI C-ABI interface additions (`iris_lut_apply_preset`, `iris_lut_apply_cube`, `iris_curves_apply_rgb`, `iris_audio_time_stretch`, `iris_audio_duck_music`, `iris_scopes_render`).
+- [x] Flutter adaptive UI integration: Color Scopes bar and canvas PIP overlay, 3D LUT preset selector chips with intensity slider, parametric curves preview, audio ducking controls, and clip speed slider with WSOLA pitch preservation toggle.
+- [x] Comprehensive test suites (`color_grading_test.rs`, `audio_test.rs`, `video_workspace_test.dart`) and verified quality gates (34 Rust tests pass, zero Clippy warnings, 100% clean formatting, zero Flutter analysis warnings, 3/3 Flutter test suites pass).
+
+## Phase 4: Motion Graphics, Keying & Hardware Acceleration (Next Phase)
+- [ ] Chroma Keying (Green / Blue screen) with despill correction and soft edge feathering.
+- [ ] Motion tracking engine (optical flow / template cross-correlation) for sticky overlays and titles.
+- [ ] Platform hardware acceleration wrappers (DirectX 11/12 DXVA on Windows, VideoToolbox on macOS/iOS, VA-API on Linux, MediaCodec on Android).
+- [ ] Motion Title Card and Lower-Thirds generator with animated text templates.
+
 

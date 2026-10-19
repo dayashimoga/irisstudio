@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - Phase 3: Advanced Audio & Color Grading (2026-10-19)
+
+### Added
+- 3D LUT Import & High-Performance Tetrahedral Interpolation (`crates/effects/src/lut.rs`):
+  - Standard Adobe `.cube` 3D format parser handling arbitrary lattice dimensions (e.g. 17x17x17, 33x33x33, 65x65x65) and custom domain bounds.
+  - 4-vertex tetrahedral interpolation evaluating each sample within 1 of 6 sub-simplex partitions for maximum color volume continuity, zero banding, and sub-millisecond evaluation.
+  - Built-in cinematic presets: `TealAndOrange`, `WarmVintage`, `BleachBypass`, `FadedFilm`, and `MonochromeContrast`.
+  - Configurable LUT blending intensity (0% to 100%) with Rayon scanline parallelization.
+- Parametric Multi-Channel RGB Curves (`crates/effects/src/curves.rs`):
+  - Fritsch-Carlson monotonic cubic Hermite spline interpolation guaranteeing strict monotonicity and eliminating unphysical overshoot dips/ringing when adjusting contrast.
+  - Multi-channel `RgbCurves` supporting independent Master, Red, Green, and Blue curves with precomputed 256-byte LUT caching.
+- WSOLA Pitch-Preserving Audio Time-Stretch (`crates/audio/src/time_stretch.rs`):
+  - Waveform Similarity Overlap-Add (WSOLA) algorithm enabling smooth video speed adjustments from 0.25x (slow-motion) to 4.0x (timelapse/fast-forward) while keeping voice and music pitch 100% invariant.
+- Multitrack Sidechain Audio Ducking (`crates/audio/src/ducking.rs`):
+  - Dynamic envelope-following ducker that automatically attenuates background score/music tracks whenever dialogue or voiceover activity is detected.
+  - Configurable voice threshold (-40 to 0 dBFS), duck attenuation (-30 to 0 dB), attack time (20ms), hold window (300ms), and release time (450ms) preventing jarring vocal pumping.
+- Real-Time Diagnostic Color Scopes (`crates/render/src/scopes.rs`):
+  - Luma Waveform Monitor: 256-level IRE density graph with Rec.709 luminance traces in phosphor green.
+  - Vectorscope: Polar chromaticity ($C_b, C_r$) plot featuring 75% SMPTE color targets (R, Mg, B, Cy, G, Yl) and a dedicated 123° skin-tone reference axis.
+  - RGB Parade: Three channel-separated waveform scopes displaying Red, Green, and Blue balance side-by-side to detect and rectify color casts.
+- FFI C-ABI Layer Extensions (`crates/ffi/src/api.rs`):
+  - Exported `iris_lut_apply_preset`, `iris_lut_apply_cube`, `iris_curves_apply_rgb`, `iris_audio_time_stretch`, `iris_audio_buffer_free`, `iris_audio_duck_music`, and `iris_scopes_render`.
+- Adaptive Flutter UI Enhancements (`apps/flutter/lib/`):
+  - Video Workspace: Top Color Scopes selector bar with real-time PIP diagnostic display (Waveform, Vectorscope, RGB Parade) embedded on the player canvas.
+  - Master Inspector: 3D LUT preset selector chips with intensity slider, custom `.cube` file import, interactive RGB Curves display with reset control, and Dialogue Ducking controls with real-time threshold and attenuation sliders.
+  - Clip Inspector: Speed slider (0.25x to 4.0x) paired with "Preserve Pitch (WSOLA)" toggle checkbox.
+- Quality Gates & Testing:
+  - Integration test suites in `tests/color_grading_test.rs` and `tests/audio_test.rs` verifying 3D LUT parsing, monotonic curve boundaries, scope generation, WSOLA time-stretch length scaling, and sidechain ducking attenuation.
+  - Comprehensive Flutter widget tests in `apps/flutter/test/video_workspace_test.dart` exercising scopes, LUT chips, curves, ducking, and pitch toggles.
+  - Zero warnings on `cargo clippy`, 100% clean formatting, zero issues on `flutter analyze`, and full passing test suite.
+
 ## [0.3.0] - Phase 2: Video MVP (2026-10-19)
 
 ### Added

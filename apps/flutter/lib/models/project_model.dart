@@ -35,6 +35,7 @@ class ClipModel {
   double scale;
   double rotation;
   double volume;
+  bool preservePitch;
 
   ClipModel({
     required this.id,
@@ -47,6 +48,7 @@ class ClipModel {
     this.scale = 1.0,
     this.rotation = 0.0,
     this.volume = 1.0,
+    this.preservePitch = true,
   });
 
   ClipModel copyWith({
@@ -60,6 +62,7 @@ class ClipModel {
     double? scale,
     double? rotation,
     double? volume,
+    bool? preservePitch,
   }) {
     return ClipModel(
       id: id ?? this.id,
@@ -72,6 +75,7 @@ class ClipModel {
       scale: scale ?? this.scale,
       rotation: rotation ?? this.rotation,
       volume: volume ?? this.volume,
+      preservePitch: preservePitch ?? this.preservePitch,
     );
   }
 }
@@ -156,6 +160,66 @@ class AudioCompressorModel {
   });
 }
 
+enum LutPresetModel {
+  none,
+  tealAndOrange,
+  warmVintage,
+  bleachBypass,
+  fadedFilm,
+  monochromeContrast,
+  customCube,
+}
+
+class RgbCurvePointModel {
+  final double x;
+  final double y;
+  const RgbCurvePointModel(this.x, this.y);
+}
+
+class RgbCurvesModel {
+  List<RgbCurvePointModel> master;
+  List<RgbCurvePointModel> red;
+  List<RgbCurvePointModel> green;
+  List<RgbCurvePointModel> blue;
+
+  RgbCurvesModel({
+    List<RgbCurvePointModel>? master,
+    List<RgbCurvePointModel>? red,
+    List<RgbCurvePointModel>? green,
+    List<RgbCurvePointModel>? blue,
+  })  : master = master ?? [const RgbCurvePointModel(0.0, 0.0), const RgbCurvePointModel(1.0, 1.0)],
+        red = red ?? [const RgbCurvePointModel(0.0, 0.0), const RgbCurvePointModel(1.0, 1.0)],
+        green = green ?? [const RgbCurvePointModel(0.0, 0.0), const RgbCurvePointModel(1.0, 1.0)],
+        blue = blue ?? [const RgbCurvePointModel(0.0, 0.0), const RgbCurvePointModel(1.0, 1.0)];
+}
+
+class AudioDuckerModel {
+  bool isEnabled;
+  double thresholdDb;
+  double duckAttenuationDb;
+  double attackMs;
+  double holdMs;
+  double releaseMs;
+  String? dialogueTrackId;
+
+  AudioDuckerModel({
+    this.isEnabled = false,
+    this.thresholdDb = -24.0,
+    this.duckAttenuationDb = -12.0,
+    this.attackMs = 20.0,
+    this.holdMs = 300.0,
+    this.releaseMs = 450.0,
+    this.dialogueTrackId,
+  });
+}
+
+enum ColorScopeMode {
+  none,
+  waveform,
+  vectorscope,
+  rgbParade,
+}
+
 class ProjectModel {
   final String id;
   String name;
@@ -167,6 +231,12 @@ class ProjectModel {
   final List<SubtitleItemModel> subtitles;
   AudioEqModel eq;
   AudioCompressorModel compressor;
+  LutPresetModel lutPreset;
+  double lutIntensity;
+  String? customCubeLutPath;
+  RgbCurvesModel curves;
+  AudioDuckerModel ducker;
+  ColorScopeMode scopeMode;
 
   ProjectModel({
     required this.id,
@@ -179,10 +249,18 @@ class ProjectModel {
     List<SubtitleItemModel>? subtitles,
     AudioEqModel? eq,
     AudioCompressorModel? compressor,
+    this.lutPreset = LutPresetModel.none,
+    this.lutIntensity = 1.0,
+    this.customCubeLutPath,
+    RgbCurvesModel? curves,
+    AudioDuckerModel? ducker,
+    this.scopeMode = ColorScopeMode.none,
   })  : transitions = transitions ?? [],
         subtitles = subtitles ?? [],
         eq = eq ?? AudioEqModel(),
-        compressor = compressor ?? AudioCompressorModel();
+        compressor = compressor ?? AudioCompressorModel(),
+        curves = curves ?? RgbCurvesModel(),
+        ducker = ducker ?? AudioDuckerModel();
 
   double get totalDuration {
     double maxDur = 0.0;
@@ -197,4 +275,3 @@ class ProjectModel {
     return maxDur > 0.0 ? maxDur : 10.0;
   }
 }
-
