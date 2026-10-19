@@ -1,6 +1,8 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-use iris_audio::{generate_waveform_peaks, WaveformPeak};
+use iris_audio::{
+    generate_waveform_peaks, AudioCompressor, EqualizerBand, ThreeBandEq, WaveformPeak,
+};
 use iris_cache::{CacheManager, MemoryBudgetTier};
 use iris_core::{Dimensions, Point, RationalTime, Rect};
 use iris_effects::{
@@ -8,7 +10,9 @@ use iris_effects::{
     apply_heal_brush, apply_levels, apply_red_eye_removal, apply_unsharp_mask, apply_vignette,
     AdjustmentParameters, LevelsParameters,
 };
-use iris_export::{validate_exported_media, BatchPhotoProcessor, BatchPhotoTask};
+use iris_export::{
+    validate_exported_media, BatchPhotoProcessor, BatchPhotoTask, ExportPreset, StreamCopyOptimizer,
+};
 use iris_images::{
     apply_exif_orientation, apply_lens_correction, apply_perspective_warp, crop_image,
     decode_image, encode_jpeg, encode_png, encode_webp, flip_horizontal, flip_vertical,
@@ -16,7 +20,10 @@ use iris_images::{
 };
 use iris_projects::{CrashJournal, Project, UndoRedoManager};
 use iris_render::{MockSourceResolver, PreviewEngine};
-use iris_timeline::{Clip, RippleDeleteCommand, SplitClipCommand, Track, TrackKind};
+use iris_timeline::{
+    Clip, RippleDeleteCommand, SplitClipCommand, SubtitleItem, SubtitleTrack, Track, TrackKind,
+    Transition, TransitionKind,
+};
 use std::ffi::{CStr, CString};
 use std::fs;
 use std::os::raw::{c_char, c_int};
@@ -915,5 +922,228 @@ pub extern "C" fn iris_photo_apply_brush(
         hardness,
         erase,
     );
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_audio_process_eq(
+    samples: *mut f32,
+    count: usize,
+    sample_rate: f32,
+    low_gain_db: f32,
+    mid_gain_db: f32,
+    high_gain_db: f32,
+) -> c_int {
+    if samples.is_null() || count == 0 {
+        return -1;
+    }
+    let slice = unsafe { slice::from_raw_parts_mut(samples, count) };
+    let mut eq = ThreeBandEq::new(sample_rate);
+    eq.low = EqualizerBand {
+        frequency_hz: 120.0,
+        gain_db: low_gain_db,
+        q_factor: 0.707,
+    };
+    eq.mid = EqualizerBand {
+        frequency_hz: 1000.0,
+        gain_db: mid_gain_db,
+        q_factor: 1.0,
+    };
+    eq.high = EqualizerBand {
+        frequency_hz: 8000.0,
+        gain_db: high_gain_db,
+        q_factor: 0.707,
+    };
+    eq.process_stereo(slice);
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_audio_process_compressor(
+    samples: *mut f32,
+    count: usize,
+    sample_rate: f32,
+    threshold_dbfs: f32,
+    ratio: f32,
+    attack_ms: f32,
+    release_ms: f32,
+    makeup_gain_db: f32,
+) -> c_int {
+    if samples.is_null() || count == 0 {
+        return -1;
+    }
+    let slice = unsafe { slice::from_raw_parts_mut(samples, count) };
+    let comp = AudioCompressor {
+        threshold_dbfs,
+        ratio,
+        attack_ms,
+        release_ms,
+        makeup_gain_db,
+    };
+    comp.process_stereo(slice, sample_rate);
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_timeline_add_transition(
+    engine: *mut IrisEngine,
+    id: *const c_char,
+    kind_code: c_int,
+    start_num: i64,
+    start_den: u64,
+    dur_num: i64,
+    dur_den: u64,
+    track_id: *const c_char,
+    clip_a: *const c_char,
+    clip_b: *const c_char,
+) -> c_int {
+    if engine.is_null() {
+        return -1;
+    }
+    let e = unsafe { &mut *engine };
+    let id_str = if id.is_null() {
+        "trans_default".to_string()
+    } else {
+        unsafe { CStr::from_ptr(id).to_string_lossy().into_owned() }
+    };
+    let trk_str = if track_id.is_null() {
+        "trk_v1".to_string()
+    } else {
+        unsafe { CStr::from_ptr(track_id).to_string_lossy().into_owned() }
+    };
+    let a_str = if clip_a.is_null() {
+        "clip_1".to_string()
+    } else {
+        unsafe { CStr::from_ptr(clip_a).to_string_lossy().into_owned() }
+    };
+    let b_str = if clip_b.is_null() {
+        "clip_2".to_string()
+    } else {
+        unsafe { CStr::from_ptr(clip_b).to_string_lossy().into_owned() }
+    };
+
+    let kind = match kind_code {
+        0 => TransitionKind::CrossDissolve,
+        1 => TransitionKind::WipeLeft,
+        2 => TransitionKind::WipeRight,
+        3 => TransitionKind::WipeUp,
+        4 => TransitionKind::WipeDown,
+        5 => TransitionKind::FadeToBlack,
+        6 => TransitionKind::Slide,
+        7 => TransitionKind::PushLeft,
+        8 => TransitionKind::PushRight,
+        9 => TransitionKind::IrisRound,
+        10 => TransitionKind::ZoomIn,
+        11 => TransitionKind::ZoomOut,
+        12 => TransitionKind::DipToColor {
+            r: 255,
+            g: 255,
+            b: 255,
+        },
+        _ => TransitionKind::CrossDissolve,
+    };
+
+    let trans = Transition::new(
+        id_str,
+        kind,
+        RationalTime::new(start_num, start_den),
+        RationalTime::new(dur_num, dur_den),
+        trk_str,
+        a_str,
+        b_str,
+    );
+
+    e.project.timeline.transitions.retain(|t| t.id != trans.id);
+    e.project.timeline.transitions.push(trans);
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_timeline_import_subtitles_srt(
+    engine: *mut IrisEngine,
+    srt_content: *const c_char,
+) -> c_int {
+    if engine.is_null() || srt_content.is_null() {
+        return -1;
+    }
+    let e = unsafe { &mut *engine };
+    let srt_str = unsafe { CStr::from_ptr(srt_content).to_string_lossy() };
+    match SubtitleTrack::parse_srt(&srt_str) {
+        Ok(track) => {
+            e.project.timeline.subtitle_tracks.clear();
+            e.project.timeline.subtitle_tracks.push(track);
+            0
+        }
+        Err(_) => -1,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn iris_timeline_export_subtitles_srt(engine: *mut IrisEngine) -> *mut c_char {
+    if engine.is_null() {
+        return std::ptr::null_mut();
+    }
+    let e = unsafe { &mut *engine };
+    if let Some(track) = e.project.timeline.subtitle_tracks.first() {
+        let srt = track.to_srt();
+        CString::new(srt)
+            .map(|c| c.into_raw())
+            .unwrap_or(std::ptr::null_mut())
+    } else {
+        std::ptr::null_mut()
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn iris_timeline_add_subtitle(
+    engine: *mut IrisEngine,
+    text: *const c_char,
+    start_ms: i64,
+    dur_ms: i64,
+) -> c_int {
+    if engine.is_null() || text.is_null() {
+        return -1;
+    }
+    let e = unsafe { &mut *engine };
+    let text_str = unsafe { CStr::from_ptr(text).to_string_lossy().into_owned() };
+    let start_time = RationalTime::new(start_ms, 1000);
+    let end_time = RationalTime::new(start_ms + dur_ms, 1000);
+
+    if e.project.timeline.subtitle_tracks.is_empty() {
+        e.project
+            .timeline
+            .subtitle_tracks
+            .push(SubtitleTrack::new("st_1", "Captions"));
+    }
+
+    let track = &mut e.project.timeline.subtitle_tracks[0];
+    let id = format!("sub_{}", track.items.len() + 1);
+    track.add_item(SubtitleItem::new(id, start_time, end_time, text_str));
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_export_analyze_stream_copy(
+    engine: *mut IrisEngine,
+    out_can_full_copy: *mut c_int,
+    out_copy_percentage: *mut f32,
+    out_speedup_factor: *mut f32,
+) -> c_int {
+    if engine.is_null() {
+        return -1;
+    }
+    let e = unsafe { &mut *engine };
+    let config = ExportPreset::Web1080p.to_config("test.mp4");
+    let plan = StreamCopyOptimizer::analyze_timeline(&e.project.timeline, &config);
+
+    if !out_can_full_copy.is_null() {
+        unsafe { *out_can_full_copy = if plan.can_full_stream_copy { 1 } else { 0 } };
+    }
+    if !out_copy_percentage.is_null() {
+        unsafe { *out_copy_percentage = plan.stream_copy_percentage };
+    }
+    if !out_speedup_factor.is_null() {
+        unsafe { *out_speedup_factor = plan.estimated_speedup };
+    }
     0
 }

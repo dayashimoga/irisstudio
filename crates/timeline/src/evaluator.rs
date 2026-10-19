@@ -54,32 +54,6 @@ impl TimelineEvaluator {
     }
 
     fn interpolate_volume(clip: &Clip, time: RationalTime) -> f32 {
-        if clip.volume_keyframes.is_empty() {
-            return 1.0;
-        }
-        if clip.volume_keyframes.len() == 1 {
-            return clip.volume_keyframes[0].value;
-        }
-
-        let kfs = &clip.volume_keyframes;
-        if time <= kfs[0].time {
-            return kfs[0].value;
-        }
-        if time >= kfs.last().unwrap().time {
-            return kfs.last().unwrap().value;
-        }
-
-        // Linear interpolation between adjacent keyframes
-        for i in 0..kfs.len() - 1 {
-            if time >= kfs[i].time && time <= kfs[i + 1].time {
-                let t0 = kfs[i].time.to_seconds();
-                let t1 = kfs[i + 1].time.to_seconds();
-                let cur = time.to_seconds();
-                let factor = ((cur - t0) / (t1 - t0).max(1e-6)) as f32;
-                return kfs[i].value + (kfs[i + 1].value - kfs[i].value) * factor;
-            }
-        }
-
-        1.0
+        crate::keyframes::interpolate_keyframes(&clip.volume_keyframes, time, 1.0)
     }
 }

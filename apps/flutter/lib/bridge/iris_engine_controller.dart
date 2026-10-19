@@ -513,6 +513,171 @@ class IrisEngineController extends ChangeNotifier {
     }
   }
 
+  // --- Keyframe Easing ---
+  String _selectedEasing = 'Linear';
+  String get selectedEasing => _selectedEasing;
+  void setEasing(String easing) {
+    _selectedEasing = easing;
+    _recordAction('Set Keyframe Easing: $easing');
+    notifyListeners();
+  }
+
+  // --- Transitions ---
+  void addTransition({
+    required String kindName,
+    double duration = 1.0,
+    String? clipAId,
+    String? clipBId,
+  }) {
+    final vTrack = _project.tracks.firstWhere(
+      (t) => t.kind == TrackKindModel.video,
+      orElse: () => _project.tracks.first,
+    );
+    if (vTrack.clips.length < 2) return;
+    final a = clipAId != null
+        ? vTrack.clips.firstWhere((c) => c.id == clipAId)
+        : vTrack.clips[0];
+    final b = clipBId != null
+        ? vTrack.clips.firstWhere((c) => c.id == clipBId)
+        : vTrack.clips[1];
+    final startTime = (a.timelineStart + a.duration) - (duration / 2);
+
+    final transition = TransitionModel(
+      id: 'trans_${DateTime.now().millisecondsSinceEpoch}',
+      kindName: kindName,
+      startTime: startTime.clamp(0.0, 9999.0),
+      duration: duration,
+      clipAId: a.id,
+      clipBId: b.id,
+    );
+
+    _project.transitions.removeWhere(
+      (t) => t.clipAId == a.id && t.clipBId == b.id,
+    );
+    _project.transitions.add(transition);
+    _recordAction('Add Transition: $kindName');
+    notifyListeners();
+  }
+
+  void removeTransition(String id) {
+    _project.transitions.removeWhere((t) => t.id == id);
+    _recordAction('Remove Transition');
+    notifyListeners();
+  }
+
+  // --- Audio EQ & Dynamics ---
+  void setAudioEq({double? low, double? mid, double? high}) {
+    if (low != null) _project.eq.lowGainDb = low;
+    if (mid != null) _project.eq.midGainDb = mid;
+    if (high != null) _project.eq.highGainDb = high;
+    notifyListeners();
+  }
+
+  void setAudioCompressor({double? threshold, double? ratio, double? makeup}) {
+    if (threshold != null) _project.compressor.thresholdDbfs = threshold;
+    if (ratio != null) _project.compressor.ratio = ratio;
+    if (makeup != null) _project.compressor.makeupGainDb = makeup;
+    notifyListeners();
+  }
+
+  // --- Subtitles & Captions ---
+  void addSubtitle({required String text, double duration = 3.0}) {
+    final sub = SubtitleItemModel(
+      id: 'sub_${DateTime.now().millisecondsSinceEpoch}',
+      startTime: _playheadSeconds,
+      duration: duration,
+      text: text,
+    );
+    _project.subtitles.add(sub);
+    _project.subtitles.sort((a, b) => a.startTime.compareTo(b.startTime));
+    _recordAction('Add Subtitle: $text');
+    notifyListeners();
+  }
+
+  void removeSubtitle(String id) {
+    _project.subtitles.removeWhere((s) => s.id == id);
+    _recordAction('Remove Subtitle');
+    notifyListeners();
+  }
+
+  void importSrt(String srtContent) {
+    final lines = srtContent.replaceAll('\r\n', '\n').split('\n\n');
+    for (final block in lines) {
+      final blockLines = block
+          .split('\n')
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty)
+          .toList();
+      if (blockLines.length < 2) continue;
+      final tsLine = blockLines[0].contains('-->')
+          ? blockLines[0]
+          : (blockLines.length >= 2 && blockLines[1].contains('-->')
+              ? blockLines[1]
+              : null);
+      if (tsLine == null) continue;
+      final parts = tsLine.split('-->');
+      if (parts.length != 2) continue;
+      final start = _parseSrtTimestamp(parts[0].trim());
+      final end = _parseSrtTimestamp(parts[1].trim());
+      final text = blockLines.sublist(blockLines.indexOf(tsLine) + 1).join('\n');
+      if (text.isNotEmpty) {
+        _project.subtitles.add(SubtitleItemModel(
+          id: 'sub_imported_${_project.subtitles.length + 1}',
+          startTime: start,
+          duration: (end - start).clamp(0.5, 60.0),
+          text: text,
+        ));
+      }
+    }
+    _project.subtitles.sort((a, b) => a.startTime.compareTo(b.startTime));
+    _recordAction('Imported SRT Subtitles');
+    notifyListeners();
+  }
+
+  double _parseSrtTimestamp(String ts) {
+    try {
+      final parts = ts.replaceAll(',', '.').split(':');
+      if (parts.length == 3) {
+        final h = double.parse(parts[0]);
+        final m = double.parse(parts[1]);
+        final s = double.parse(parts[2]);
+        return h * 3600.0 + m * 60.0 + s;
+      }
+    } catch (_) {}
+    return 0.0;
+  }
+
+  // --- Stream Copy Optimization ---
+  double get streamCopyPercentage {
+    final vTracks = _project.tracks
+        .where((t) => t.kind == TrackKindModel.video && !t.isMuted)
+        .toList();
+    if (vTracks.length != 1) return 0.0;
+    final track = vTracks.first;
+    if (track.clips.isEmpty) return 0.0;
+
+    double copyDuration = 0.0;
+    for (final clip in track.clips) {
+      final isDefault = (clip.scale - 1.0).abs() < 1e-3 &&
+          clip.rotation.abs() < 1e-3 &&
+          (clip.opacity - 1.0).abs() < 1e-3 &&
+          (clip.speed - 1.0).abs() < 1e-3;
+      final hasTransition = _project.transitions.any(
+        (t) => t.clipAId == clip.id || t.clipBId == clip.id,
+      );
+      if (isDefault && !hasTransition) {
+        copyDuration += clip.duration;
+      }
+    }
+    final total = _project.totalDuration;
+    return total > 0 ? ((copyDuration / total) * 100.0).clamp(0.0, 100.0) : 0.0;
+  }
+
+  double get estimatedSpeedup {
+    final pct = streamCopyPercentage;
+    return 1.0 + (pct / 100.0) * 24.0;
+  }
+
   void _simulateAudioMeters() {
     final random = math.Random();
     _peakLeft = (0.3 + random.nextDouble() * 0.45).clamp(0.0, 1.0);
@@ -576,6 +741,22 @@ class IrisEngineController extends ChangeNotifier {
       ],
     );
 
+    final demoTransition = TransitionModel(
+      id: 'trans_demo_1',
+      kindName: 'Iris Round',
+      startTime: 4.0,
+      duration: 1.0,
+      clipAId: 'clip_1',
+      clipBId: 'clip_2',
+    );
+
+    final demoSubtitle = SubtitleItemModel(
+      id: 'sub_demo_1',
+      startTime: 1.0,
+      duration: 3.5,
+      text: 'Iris Studio: High-Performance Offline Editor',
+    );
+
     return ProjectModel(
       id: 'prj_demo_01',
       name: 'Iris Studio Showcase Project',
@@ -583,6 +764,8 @@ class IrisEngineController extends ChangeNotifier {
       width: 1920,
       height: 1080,
       tracks: [overlayTrack, vTrack, aTrack],
+      transitions: [demoTransition],
+      subtitles: [demoSubtitle],
     );
   }
 

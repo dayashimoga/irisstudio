@@ -44,3 +44,8 @@ path = "export_test.rs"
 [[test]]
 name = "batch_export_test"
 path = "batch_export_test.rs"
+
+[[test]]
+name = "video_pipeline_test"
+path = "video_pipeline_test.rs"
+

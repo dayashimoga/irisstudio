@@ -98,6 +98,64 @@ class TrackModel {
   });
 }
 
+class TransitionModel {
+  final String id;
+  final String kindName;
+  final double startTime;
+  final double duration;
+  final String clipAId;
+  final String clipBId;
+
+  const TransitionModel({
+    required this.id,
+    required this.kindName,
+    required this.startTime,
+    required this.duration,
+    required this.clipAId,
+    required this.clipBId,
+  });
+}
+
+class SubtitleItemModel {
+  final String id;
+  final double startTime;
+  final double duration;
+  final String text;
+
+  const SubtitleItemModel({
+    required this.id,
+    required this.startTime,
+    required this.duration,
+    required this.text,
+  });
+
+  double get endTime => startTime + duration;
+}
+
+class AudioEqModel {
+  double lowGainDb;
+  double midGainDb;
+  double highGainDb;
+
+  AudioEqModel({
+    this.lowGainDb = 0.0,
+    this.midGainDb = 0.0,
+    this.highGainDb = 0.0,
+  });
+}
+
+class AudioCompressorModel {
+  double thresholdDbfs;
+  double ratio;
+  double makeupGainDb;
+
+  AudioCompressorModel({
+    this.thresholdDbfs = -18.0,
+    this.ratio = 4.0,
+    this.makeupGainDb = 3.0,
+  });
+}
+
 class ProjectModel {
   final String id;
   String name;
@@ -105,6 +163,10 @@ class ProjectModel {
   final int width;
   final int height;
   final List<TrackModel> tracks;
+  final List<TransitionModel> transitions;
+  final List<SubtitleItemModel> subtitles;
+  AudioEqModel eq;
+  AudioCompressorModel compressor;
 
   ProjectModel({
     required this.id,
@@ -113,7 +175,14 @@ class ProjectModel {
     this.width = 1920,
     this.height = 1080,
     required this.tracks,
-  });
+    List<TransitionModel>? transitions,
+    List<SubtitleItemModel>? subtitles,
+    AudioEqModel? eq,
+    AudioCompressorModel? compressor,
+  })  : transitions = transitions ?? [],
+        subtitles = subtitles ?? [],
+        eq = eq ?? AudioEqModel(),
+        compressor = compressor ?? AudioCompressorModel();
 
   double get totalDuration {
     double maxDur = 0.0;
@@ -128,3 +197,4 @@ class ProjectModel {
     return maxDur > 0.0 ? maxDur : 10.0;
   }
 }
+

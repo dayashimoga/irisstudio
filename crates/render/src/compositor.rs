@@ -34,12 +34,73 @@ impl Compositor {
             chunk[3] = 255;
         }
 
-        if active_clips.is_empty() {
-            return Ok(final_frame);
+        let mut handled_clips = std::collections::HashSet::new();
+
+        // 1. Check for active transitions between clips
+        for transition in &timeline.transitions {
+            if let Some(progress) = transition.progress_at(time) {
+                let clip_a = timeline
+                    .tracks
+                    .iter()
+                    .flat_map(|t| &t.clips)
+                    .find(|c| c.id == transition.clip_a_id);
+                let clip_b = timeline
+                    .tracks
+                    .iter()
+                    .flat_map(|t| &t.clips)
+                    .find(|c| c.id == transition.clip_b_id);
+
+                if let (Some(a), Some(b)) = (clip_a, clip_b) {
+                    handled_clips.insert(a.id.clone());
+                    handled_clips.insert(b.id.clone());
+
+                    let offset_a = time - a.timeline_range.start;
+                    let scaled_num_a = (offset_a.numerator as f64 * a.speed as f64).round() as i64;
+                    let src_time_a = a.source_range.start
+                        + RationalTime::new(scaled_num_a, offset_a.denominator);
+
+                    let offset_b = time - b.timeline_range.start;
+                    let scaled_num_b = (offset_b.numerator as f64 * b.speed as f64).round() as i64;
+                    let src_time_b = b.source_range.start
+                        + RationalTime::new(scaled_num_b, offset_b.denominator);
+
+                    let frame_a = source_resolver.resolve_video_frame(
+                        &a.asset_id,
+                        src_time_a,
+                        self.canvas_dimensions,
+                    )?;
+                    let frame_b = source_resolver.resolve_video_frame(
+                        &b.asset_id,
+                        src_time_b,
+                        self.canvas_dimensions,
+                    )?;
+
+                    let mut trans_frame =
+                        VideoFrame::new(self.canvas_dimensions, PixelFormat::Rgba8, time, duration);
+                    crate::transition::render_transition(
+                        &frame_a,
+                        &frame_b,
+                        transition.kind,
+                        progress,
+                        &mut trans_frame,
+                    )?;
+
+                    self.blend_layer(
+                        &mut final_frame,
+                        &trans_frame,
+                        &iris_timeline::ClipTransform::default(),
+                        1.0,
+                    );
+                }
+            }
         }
 
-        // Composite active clips from bottom to top
+        // 2. Composite remaining active clips from bottom to top
         for clip_state in active_clips {
+            if handled_clips.contains(&clip_state.clip_id) {
+                continue;
+            }
+
             let source_frame = source_resolver.resolve_video_frame(
                 &clip_state.asset_id,
                 clip_state.source_time,
@@ -52,6 +113,15 @@ impl Compositor {
                 &clip_state.transform,
                 clip_state.opacity,
             );
+        }
+
+        // 3. Render subtitle overlays if present
+        if !timeline.subtitle_tracks.is_empty() {
+            crate::subtitles::render_subtitles_on_frame(
+                &mut final_frame,
+                &timeline.subtitle_tracks,
+                time,
+            )?;
         }
 
         Ok(final_frame)
