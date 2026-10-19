@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - Phase 4: Motion Graphics, Keying & Hardware Acceleration (2026-10-19)
+
+### Added
+- Real-Time Chroma Keying & Despill Suppression Engine (`crates/effects/src/chroma_key.rs`):
+  - Normalized Euclidean distance keying in weighted perceptual RGB space.
+  - Smoothstep alpha matte generation with configurable similarity cutoff ($0.01$ to $1.0$) and edge softness/feathering ($0.001$ to $1.0$).
+  - High-performance despill algorithm suppressing green and blue bounce reflections on foreground edges.
+  - Presets for pure green (`[0.0, 1.0, 0.0]`) and pure blue (`[0.0, 0.0, 1.0]`) screen backdrops with Rayon parallel scanline execution.
+- Sub-Pixel Normalized Cross-Correlation (NCC) Motion Tracker (`crates/effects/src/tracker.rs`):
+  - 2D template matching over an adjustable search radius (up to $\pm 96\text{px}$) with normalized cross-correlation resistant to illumination changes.
+  - Parabolic sub-pixel peak interpolation extracting continuous $(x, y)$ coordinate shifts.
+  - Exponential moving average (EMA) trajectory smoother eliminating jitter while retaining responsive tracking motion.
+- Platform-Native Hardware Acceleration Context (`crates/media/src/hardware.rs`):
+  - Hardware device detection across Microsoft Windows (Direct3D 11 Video Acceleration - D3D11VA), Apple macOS/iOS (VideoToolbox), Linux (VA-API), and Android (MediaCodec NDK).
+  - Pre-allocated zero-copy hardware surface ring buffer pool (`HardwareSurfacePool`) preventing per-frame VRAM/DRAM allocation churn.
+- Motion Graphics Titles & Lower-Thirds Generator (`crates/render/src/titles.rs`):
+  - 4 broadcast-grade animated motion graphic templates: `MinimalClean` (animated cyan accent line), `LowerThirdNews` (glassmorphic lower-third with cyan pill tag), `CinematicCenter` (centered title with top and bottom framing rules), and `CalloutBox` (technical HUD bracket box).
+  - Non-linear temporal animation curves (Entry smoothstep, Steady hold, Exit smoothstep).
+  - Scalable glyph rasterization using built-in ASCII font bitmap table.
+- FFI C-ABI Layer Extensions (`crates/ffi/src/api.rs`):
+  - Exported `iris_chroma_key_apply`, `iris_motion_track_frame`, `iris_hardware_detect`, and `iris_render_motion_title`.
+- Adaptive Flutter UI Enhancements (`apps/flutter/lib/`):
+  - App Header: Active Hardware Acceleration badge (`HW ACCEL`) with hover tooltip detailing backend name, zero-copy support, max resolution (8K), and stream concurrency.
+  - Video Workspace Canvas: Live motion title overlay rendering active title templates directly on the video player display with dynamic styling.
+  - Master Inspector: Hardware Acceleration engine status card and Motion Graphics Titles & Lower-Thirds manager with template chips and active card list.
+  - Clip Inspector: Chroma Keying switch, Green/Blue presets, Similarity, Smoothness, and Despill sliders, and Sub-pixel NCC Motion Tracking panel.
+- Quality Gates & Testing:
+  - Integration test suite `tests/motion_and_keying_test.rs` covering chroma keying, motion tracking NCC, motion title rendering, and hardware surface pooling.
+  - Flutter widget tests in `apps/flutter/test/video_workspace_test.dart` asserting hardware status, title cards, chroma key controls, and motion tracking.
+  - 100% test pass (38 Rust tests, 3/3 Flutter test suites), zero Clippy warnings, 100% clean formatting, zero Flutter analysis warnings, and verified benchmarks.
+
 ## [0.4.0] - Phase 3: Advanced Audio & Color Grading (2026-10-19)
 
 ### Added

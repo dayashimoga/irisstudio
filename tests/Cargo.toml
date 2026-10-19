@@ -53,3 +53,8 @@ path = "video_pipeline_test.rs"
 name = "color_grading_test"
 path = "color_grading_test.rs"
 
+[[test]]
+name = "motion_and_keying_test"
+path = "motion_and_keying_test.rs"
+
+

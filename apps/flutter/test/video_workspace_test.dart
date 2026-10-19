@@ -85,6 +85,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.scopeMode, ColorScopeMode.vectorscope);
 
+    // Phase 4: Verify Hardware Acceleration Context Card
+    await tester.ensureVisible(find.text('HARDWARE ACCEL'));
+    expect(find.text('HARDWARE ACCEL'), findsOneWidget);
+    expect(find.textContaining('D3D11VA'), findsOneWidget);
+
+    // Phase 4: Verify Motion Graphics Titles & Lower-Thirds Card
+    await tester.ensureVisible(find.text('MOTION GRAPHICS TITLES'));
+    expect(find.text('MOTION GRAPHICS TITLES'), findsOneWidget);
+    expect(find.text('Clean'), findsOneWidget);
+    expect(find.text('Cinematic'), findsOneWidget);
+    await tester.tap(find.text('Cinematic'));
+    await tester.pumpAndSettle();
+    expect(find.text('CINEMATIC'), findsAtLeastNWidgets(1));
+
     // 5. Select a clip on the timeline
     final clipText = find.text('Golden Hour Intro.mp4');
     expect(clipText, findsOneWidget);
@@ -98,6 +112,22 @@ void main() {
     expect(find.text('Preserve Pitch (WSOLA)'), findsOneWidget);
     expect(find.text('KEYFRAME EASING CURVE'), findsOneWidget);
     expect(find.text('TRANSITIONS (EXTENDED PRESETS)'), findsOneWidget);
+
+    // Phase 4: Verify Chroma Keying in Clip Inspector
+    await tester.ensureVisible(find.text('CHROMA KEYING & SPILL'));
+    expect(find.text('CHROMA KEYING & SPILL'), findsOneWidget);
+    controller.toggleClipChromaKey(true);
+    await tester.pumpAndSettle();
+    expect(controller.selectedClip?.chromaKey.isEnabled, isTrue);
+    expect(find.text('Green Screen'), findsOneWidget);
+    expect(find.text('Blue Screen'), findsOneWidget);
+    expect(find.text('Similarity Threshold'), findsOneWidget);
+    expect(find.text('Spill Suppression'), findsOneWidget);
+
+    // Phase 4: Verify Motion Tracking in Clip Inspector
+    await tester.ensureVisible(find.text('MOTION TRACKING (NCC)'));
+    expect(find.text('MOTION TRACKING (NCC)'), findsOneWidget);
+    expect(find.text('Track Subject in Clip'), findsOneWidget);
 
     // Test Keyframe Easing selection
     await tester.ensureVisible(find.text('Ease In-Out'));

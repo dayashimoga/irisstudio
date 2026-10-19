@@ -61,10 +61,23 @@
 - [x] Flutter adaptive UI integration: Color Scopes bar and canvas PIP overlay, 3D LUT preset selector chips with intensity slider, parametric curves preview, audio ducking controls, and clip speed slider with WSOLA pitch preservation toggle.
 - [x] Comprehensive test suites (`color_grading_test.rs`, `audio_test.rs`, `video_workspace_test.dart`) and verified quality gates (34 Rust tests pass, zero Clippy warnings, 100% clean formatting, zero Flutter analysis warnings, 3/3 Flutter test suites pass).
 
-## Phase 4: Motion Graphics, Keying & Hardware Acceleration (Next Phase)
-- [ ] Chroma Keying (Green / Blue screen) with despill correction and soft edge feathering.
-- [ ] Motion tracking engine (optical flow / template cross-correlation) for sticky overlays and titles.
-- [ ] Platform hardware acceleration wrappers (DirectX 11/12 DXVA on Windows, VideoToolbox on macOS/iOS, VA-API on Linux, MediaCodec on Android).
-- [ ] Motion Title Card and Lower-Thirds generator with animated text templates.
+## Phase 4: Motion Graphics, Keying & Hardware Acceleration (Completed & Verified)
+- [x] Chroma Keying (Green / Blue screen) with despill correction, Euclidean color distance, and smoothstep alpha feathering (`crates/effects/src/chroma_key.rs`).
+- [x] Motion tracking engine with 2D Normalized Cross-Correlation (NCC), sub-pixel parabolic peak refinement, and exponential moving average trajectory smoothing (`crates/effects/src/tracker.rs`).
+- [x] Platform hardware acceleration context and zero-copy surface ring buffer pool abstraction across Windows (D3D11VA), macOS/iOS (VideoToolbox), Linux (VA-API), and Android (MediaCodec) (`crates/media/src/hardware.rs`).
+- [x] Motion graphics title cards and lower-thirds generator with 4 animated templates (`MinimalClean`, `LowerThirdNews`, `CinematicCenter`, `CalloutBox`) and smooth temporal easing (`crates/render/src/titles.rs`).
+- [x] FFI C-ABI interface additions (`iris_chroma_key_apply`, `iris_motion_track_frame`, `iris_hardware_detect`, `iris_render_motion_title`).
+- [x] Adaptive Flutter UI integration:
+  - [x] App Header: Dynamic Hardware Acceleration badge (`HW ACCEL`) with device capability tooltip.
+  - [x] Video Workspace: Active motion title card live overlay on video player canvas, Master Inspector Hardware Acceleration Card, and Motion Titles & Lower-Thirds management.
+  - [x] Clip Inspector: Chroma Keying toggle, Green/Blue presets, Similarity, Smoothness, and Despill sliders, and Sub-pixel NCC Motion Tracking inspector.
+- [x] Comprehensive test suites (`tests/motion_and_keying_test.rs`, `apps/flutter/test/video_workspace_test.dart`) and verified quality gates (38 Rust tests pass, zero Clippy warnings, 100% clean formatting, zero Flutter analysis warnings, 3/3 Flutter test suites pass).
+
+## Phase 5: Multi-Camera Switching & Spatial Audio (Next Phase)
+- [ ] Multi-camera synchronized angle ingest and real-time live angle switching engine.
+- [ ] Ambisonic B-format and binaural 3D spatial audio panner.
+- [ ] HDR (High Dynamic Range) tone mapping: PQ (ST 2084) and HLG transfer functions.
+- [ ] GPU-accelerated compute shaders (WGSL / WGPU) for real-time 4K/60fps playback.
+
 
 

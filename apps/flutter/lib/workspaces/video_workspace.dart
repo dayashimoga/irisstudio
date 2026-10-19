@@ -188,6 +188,10 @@ class VideoWorkspace extends StatelessWidget {
                           ),
                         ),
 
+                      // Active Motion Title Card Overlay
+                      if (controller.activeMotionTitle != null)
+                        _buildActiveMotionTitleOverlay(controller.activeMotionTitle!),
+
                       // Timecode Stamp Overlay
                       Positioned(
                         bottom: 12,
@@ -398,6 +402,13 @@ class VideoWorkspace extends StatelessWidget {
               ],
             ),
           ),
+
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // Hardware Acceleration Context Card
+          _buildHardwareAccelerationCard(context),
 
           const SizedBox(height: 16),
           const Divider(height: 1),
@@ -737,6 +748,13 @@ class VideoWorkspace extends StatelessWidget {
               ),
             );
           }),
+
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // Motion Graphics Titles & Lower-Thirds
+          _buildMotionTitlesSection(context),
         ],
       ),
     );
@@ -973,6 +991,20 @@ class VideoWorkspace extends StatelessWidget {
               'Push Right',
             ].map((name) => _buildTransitionChip(name, clip)).toList(),
           ),
+
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // Chroma Keying & Spill Suppression Section
+          _buildChromaKeySection(context, clip),
+
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // Motion Tracking (NCC Sub-pixel) Section
+          _buildMotionTrackingSection(context, clip),
         ],
       ),
     );
@@ -1354,6 +1386,574 @@ class VideoWorkspace extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActiveMotionTitleOverlay(MotionTitleModel title) {
+    switch (title.template) {
+      case MotionTitleTemplate.lowerThirdNews:
+        return Positioned(
+          bottom: 36,
+          left: 20,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 340),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xE60F121A),
+              borderRadius: BorderRadius.circular(4),
+              border: const Border(
+                left: BorderSide(color: IrisTheme.primaryCyan, width: 4),
+              ),
+              boxShadow: const [
+                BoxShadow(color: Colors.black54, blurRadius: 10),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title.title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  title.subtitle,
+                  style: const TextStyle(
+                    color: IrisTheme.textSecondary,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
+      case MotionTitleTemplate.minimalClean:
+        return Positioned(
+          bottom: 40,
+          left: 24,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title.title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  letterSpacing: 1.0,
+                  shadows: [Shadow(color: Colors.black87, blurRadius: 6)],
+                ),
+              ),
+              Container(
+                width: 60,
+                height: 2,
+                margin: const EdgeInsets.symmetric(vertical: 4),
+                color: IrisTheme.primaryCyan,
+              ),
+              Text(
+                title.subtitle,
+                style: const TextStyle(
+                  color: IrisTheme.textSecondary,
+                  fontSize: 10,
+                  shadows: [Shadow(color: Colors.black87, blurRadius: 6)],
+                ),
+              ),
+            ],
+          ),
+        );
+
+      case MotionTitleTemplate.cinematicCenter:
+        return Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.black45,
+              border: Border.symmetric(
+                horizontal: BorderSide(
+                  color: IrisTheme.primaryCyan.withValues(alpha: 0.7),
+                  width: 1.5,
+                ),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title.title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    letterSpacing: 3.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  title.subtitle,
+                  style: const TextStyle(
+                    color: IrisTheme.textSecondary,
+                    fontSize: 10,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
+      case MotionTitleTemplate.calloutBox:
+        return Positioned(
+          top: 24,
+          left: 24,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xCC0F121A),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: IrisTheme.primaryCyan),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.gps_fixed, size: 12, color: IrisTheme.primaryCyan),
+                const SizedBox(width: 6),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 10,
+                      ),
+                    ),
+                    Text(
+                      title.subtitle,
+                      style: const TextStyle(
+                        color: IrisTheme.textSecondary,
+                        fontSize: 8,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+    }
+  }
+
+  Widget _buildHardwareAccelerationCard(BuildContext context) {
+    final hw = controller.hardwareInfo;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: IrisTheme.surfaceLight,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: hw.isAvailable
+              ? IrisTheme.accentGreen.withValues(alpha: 0.35)
+              : IrisTheme.border,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Expanded(
+                child: Row(
+                  children: [
+                    Icon(Icons.memory, size: 14, color: IrisTheme.accentGreen),
+                    SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'HARDWARE ACCEL',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: IrisTheme.accentGreen,
+                          letterSpacing: 0.5,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: IrisTheme.accentGreen.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: const Text(
+                  'ACTIVE',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: IrisTheme.accentGreen,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            hw.backendName,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: IrisTheme.textPrimary,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Zero-Copy: ${hw.supportsZeroCopy ? "Ring Buffer Active" : "Staged Memory"} • '
+            'Max ${hw.maxWidth}x${hw.maxHeight} • ${hw.maxStreams} Streams',
+            style: const TextStyle(fontSize: 10, color: IrisTheme.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMotionTitlesSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Expanded(
+              child: Text(
+                'MOTION GRAPHICS TITLES',
+                style: TextStyle(
+                  color: IrisTheme.textMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.add, size: 14, color: IrisTheme.primaryCyan),
+              tooltip: 'Add Motion Title at Playhead',
+              onPressed: () {
+                controller.addMotionTitle(
+                  title: 'BREAKING NEWS',
+                  subtitle: 'Live On-Air Broadcast Lower Third',
+                  template: MotionTitleTemplate.lowerThirdNews,
+                  duration: 4.0,
+                );
+              },
+              splashRadius: 14,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        // Template Quick Add Chips
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            ('Clean', MotionTitleTemplate.minimalClean),
+            ('Lower Third', MotionTitleTemplate.lowerThirdNews),
+            ('Cinematic', MotionTitleTemplate.cinematicCenter),
+            ('Callout', MotionTitleTemplate.calloutBox),
+          ].map((item) {
+            return ActionChip(
+              avatar: const Icon(Icons.add, size: 10),
+              label: Text(item.$1, style: const TextStyle(fontSize: 10)),
+              backgroundColor: IrisTheme.surfaceLight,
+              onPressed: () {
+                controller.addMotionTitle(
+                  title: item.$1.toUpperCase(),
+                  subtitle: 'Motion Graphic Template',
+                  template: item.$2,
+                  duration: 3.5,
+                );
+              },
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 8),
+
+        // List of Active Titles
+        ...controller.motionTitles.map((title) {
+          final templateName = switch (title.template) {
+            MotionTitleTemplate.minimalClean => 'Minimal',
+            MotionTitleTemplate.lowerThirdNews => 'Lower Third',
+            MotionTitleTemplate.cinematicCenter => 'Cinematic',
+            MotionTitleTemplate.calloutBox => 'Callout',
+          };
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: IrisTheme.surfaceLight,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                color: controller.activeMotionTitle?.id == title.id
+                    ? IrisTheme.primaryCyan.withValues(alpha: 0.4)
+                    : IrisTheme.border,
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: IrisTheme.primaryCyan.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                            child: Text(
+                              templateName,
+                              style: const TextStyle(
+                                fontSize: 8,
+                                fontWeight: FontWeight.w700,
+                                color: IrisTheme.primaryCyan,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              title.title,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: IrisTheme.textPrimary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${title.startTime.toStringAsFixed(1)}s - ${title.endTime.toStringAsFixed(1)}s • ${title.subtitle}',
+                        style: const TextStyle(fontSize: 9, color: IrisTheme.textMuted),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 14, color: IrisTheme.textMuted),
+                  onPressed: () => controller.removeMotionTitle(title.id),
+                  splashRadius: 12,
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildChromaKeySection(BuildContext context, ClipModel clip) {
+    final chroma = clip.chromaKey;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Expanded(
+              child: Text(
+                'CHROMA KEYING & SPILL',
+                style: TextStyle(
+                  color: IrisTheme.textMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Switch(
+              value: chroma.isEnabled,
+              activeThumbColor: IrisTheme.primaryCyan,
+              onChanged: (val) {
+                controller.toggleClipChromaKey(val);
+              },
+            ),
+          ],
+        ),
+        if (chroma.isEnabled) ...[
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                const Text(
+                  'Preset: ',
+                  style: TextStyle(fontSize: 10, color: IrisTheme.textSecondary),
+                ),
+                const SizedBox(width: 6),
+                ActionChip(
+                  label: const Text('Green Screen', style: TextStyle(fontSize: 10)),
+                  backgroundColor: IrisTheme.surfaceLight,
+                  avatar: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.green,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  onPressed: () => controller.setChromaKeyPreset('green'),
+                ),
+                const SizedBox(width: 6),
+                ActionChip(
+                  label: const Text('Blue Screen', style: TextStyle(fontSize: 10)),
+                  backgroundColor: IrisTheme.surfaceLight,
+                  avatar: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.blue,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  onPressed: () => controller.setChromaKeyPreset('blue'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildInspectorSlider(
+            label: 'Similarity Threshold',
+            value: chroma.similarity * 100.0,
+            min: 1.0,
+            max: 100.0,
+            unit: '%',
+            onChanged: (val) {
+              controller.updateClipChromaKey(similarity: val / 100.0);
+            },
+          ),
+          _buildInspectorSlider(
+            label: 'Edge Smoothness',
+            value: chroma.smoothness * 100.0,
+            min: 0.1,
+            max: 100.0,
+            unit: '%',
+            onChanged: (val) {
+              controller.updateClipChromaKey(smoothness: val / 100.0);
+            },
+          ),
+          _buildInspectorSlider(
+            label: 'Spill Suppression',
+            value: chroma.spillSuppression * 100.0,
+            min: 0.0,
+            max: 100.0,
+            unit: '%',
+            onChanged: (val) {
+              controller.updateClipChromaKey(spillSuppression: val / 100.0);
+            },
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildMotionTrackingSection(BuildContext context, ClipModel clip) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(
+          children: [
+            Icon(Icons.track_changes, size: 14, color: IrisTheme.primaryCyan),
+            SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'MOTION TRACKING (NCC)',
+                style: TextStyle(
+                  color: IrisTheme.textMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: IrisTheme.surfaceLight,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: IrisTheme.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Sub-pixel Normalized Cross-Correlation (NCC) Engine',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: IrisTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Search Radius: ±24px • Smoothing Factor: 0.65 • Trajectory Lock: Stable',
+                style: TextStyle(fontSize: 9, color: IrisTheme.textMuted),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.play_arrow, size: 12),
+                  label: const Text('Track Subject in Clip', style: TextStyle(fontSize: 10)),
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: IrisTheme.primaryCyan,
+                    side: const BorderSide(color: IrisTheme.primaryCyan),
+                  ),
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Motion tracking completed: 100% confidence lock'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
         ),
       ],

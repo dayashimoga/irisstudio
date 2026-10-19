@@ -7,9 +7,10 @@ use iris_audio::{
 use iris_cache::{CacheManager, MemoryBudgetTier};
 use iris_core::{Dimensions, PixelFormat, Point, RationalTime, Rect};
 use iris_effects::{
-    apply_adjustments, apply_brush_stroke, apply_clone_stamp, apply_denoise, apply_gaussian_blur,
-    apply_heal_brush, apply_levels, apply_red_eye_removal, apply_unsharp_mask, apply_vignette,
-    AdjustmentParameters, LevelsParameters, Lut3D, LutPreset, RgbCurves, SplinePoint,
+    apply_adjustments, apply_brush_stroke, apply_chroma_key, apply_clone_stamp, apply_denoise,
+    apply_gaussian_blur, apply_heal_brush, apply_levels, apply_red_eye_removal, apply_unsharp_mask,
+    apply_vignette, AdjustmentParameters, ChromaKeyParams, LevelsParameters, Lut3D, LutPreset,
+    MotionTracker, RgbCurves, SplinePoint,
 };
 use iris_export::{
     validate_exported_media, BatchPhotoProcessor, BatchPhotoTask, ExportPreset, StreamCopyOptimizer,
@@ -19,10 +20,11 @@ use iris_images::{
     decode_image, encode_jpeg, encode_png, encode_webp, flip_horizontal, flip_vertical,
     resize_bilinear, rotate_90, straighten_image, RgbaImage,
 };
-use iris_media::VideoFrame;
+use iris_media::{HardwareBackendKind, HardwareDeviceContext, VideoFrame};
 use iris_projects::{CrashJournal, Project, UndoRedoManager};
 use iris_render::{
-    render_rgb_parade, render_vectorscope, render_waveform, MockSourceResolver, PreviewEngine,
+    render_motion_title, render_rgb_parade, render_vectorscope, render_waveform,
+    MockSourceResolver, PreviewEngine, TitleTemplate,
 };
 use iris_timeline::{
     Clip, RippleDeleteCommand, SplitClipCommand, SubtitleItem, SubtitleTrack, Track, TrackKind,
@@ -1357,5 +1359,181 @@ pub extern "C" fn iris_scopes_render(
         )
     };
     out_slice.copy_from_slice(&scope_frame.data);
+    0
+}
+
+// =========================================================================
+// Phase 4: Chroma Keying, Motion Tracking, Hardware Acceleration, Motion Titles
+// =========================================================================
+
+#[no_mangle]
+pub extern "C" fn iris_chroma_key_apply(
+    pixels: *mut u8,
+    len: usize,
+    key_r: f32,
+    key_g: f32,
+    key_b: f32,
+    similarity: f32,
+    smoothness: f32,
+    spill_suppression: f32,
+) -> c_int {
+    if pixels.is_null() || len == 0 || !len.is_multiple_of(4) {
+        return -1;
+    }
+    let slice = unsafe { slice::from_raw_parts_mut(pixels, len) };
+    let params = ChromaKeyParams {
+        key_color: [key_r, key_g, key_b],
+        similarity,
+        smoothness,
+        spill_suppression,
+    };
+    apply_chroma_key(slice, &params);
+    0
+}
+
+#[repr(C)]
+pub struct CMotionTrackResult {
+    pub center_x: f32,
+    pub center_y: f32,
+    pub confidence: f32,
+}
+
+#[no_mangle]
+pub extern "C" fn iris_motion_track_frame(
+    frame_a: *const u8,
+    frame_b: *const u8,
+    width: usize,
+    height: usize,
+    center_x: f32,
+    center_y: f32,
+    patch_size: usize,
+    search_radius: usize,
+    smoothing: f32,
+    out_result: *mut CMotionTrackResult,
+) -> c_int {
+    if frame_a.is_null()
+        || frame_b.is_null()
+        || out_result.is_null()
+        || width == 0
+        || height == 0
+        || patch_size == 0
+    {
+        return -1;
+    }
+    let len = width * height * 4;
+    let slice_a = unsafe { slice::from_raw_parts(frame_a, len) };
+    let slice_b = unsafe { slice::from_raw_parts(frame_b, len) };
+
+    let tracker = MotionTracker::new(search_radius, smoothing);
+    let pt = tracker.track_between_frames(
+        slice_a,
+        slice_b,
+        width,
+        height,
+        (center_x, center_y),
+        patch_size,
+    );
+
+    unsafe {
+        (*out_result).center_x = pt.center_x;
+        (*out_result).center_y = pt.center_y;
+        (*out_result).confidence = pt.confidence;
+    }
+    0
+}
+
+#[repr(C)]
+pub struct CHardwareDeviceInfo {
+    pub backend_code: c_int,
+    pub supports_zero_copy: c_int,
+    pub max_width: u32,
+    pub max_height: u32,
+    pub max_streams: usize,
+    pub is_available: c_int,
+}
+
+#[no_mangle]
+pub extern "C" fn iris_hardware_detect(
+    out_info: *mut CHardwareDeviceInfo,
+    out_name_buf: *mut c_char,
+    name_buf_len: usize,
+) -> c_int {
+    if out_info.is_null() {
+        return -1;
+    }
+    let ctx = HardwareDeviceContext::detect();
+    let backend_code = match ctx.backend {
+        HardwareBackendKind::D3D11VA => 0,
+        HardwareBackendKind::DXVA2 => 1,
+        HardwareBackendKind::VideoToolbox => 2,
+        HardwareBackendKind::VaApi => 3,
+        HardwareBackendKind::MediaCodec => 4,
+        HardwareBackendKind::Software => 5,
+    };
+
+    unsafe {
+        (*out_info).backend_code = backend_code;
+        (*out_info).supports_zero_copy = if ctx.supports_zero_copy { 1 } else { 0 };
+        (*out_info).max_width = ctx.max_width;
+        (*out_info).max_height = ctx.max_height;
+        (*out_info).max_streams = ctx.max_concurrent_streams;
+        (*out_info).is_available = if ctx.is_available { 1 } else { 0 };
+
+        if !out_name_buf.is_null() && name_buf_len > 0 {
+            let name_bytes = ctx.device_name.as_bytes();
+            let copy_len = name_bytes.len().min(name_buf_len - 1);
+            std::ptr::copy_nonoverlapping(name_bytes.as_ptr(), out_name_buf as *mut u8, copy_len);
+            *out_name_buf.add(copy_len) = 0;
+        }
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_render_motion_title(
+    pixels: *mut u8,
+    width: u32,
+    height: u32,
+    title: *const c_char,
+    subtitle: *const c_char,
+    template_idx: c_int,
+    progress: f32,
+) -> c_int {
+    if pixels.is_null() || width == 0 || height == 0 {
+        return -1;
+    }
+
+    let title_str = if title.is_null() {
+        ""
+    } else {
+        unsafe { CStr::from_ptr(title).to_str().unwrap_or("") }
+    };
+    let sub_str = if subtitle.is_null() {
+        ""
+    } else {
+        unsafe { CStr::from_ptr(subtitle).to_str().unwrap_or("") }
+    };
+
+    let template = match template_idx {
+        0 => TitleTemplate::MinimalClean,
+        1 => TitleTemplate::LowerThirdNews,
+        2 => TitleTemplate::CinematicCenter,
+        3 => TitleTemplate::CalloutBox,
+        _ => TitleTemplate::MinimalClean,
+    };
+
+    let len = (width * height * 4) as usize;
+    let slice = unsafe { slice::from_raw_parts_mut(pixels, len) };
+    let mut frame = VideoFrame::from_raw(
+        Dimensions::new(width, height),
+        PixelFormat::Rgba8,
+        RationalTime::ZERO,
+        RationalTime::new(1, 30),
+        slice.to_vec(),
+    );
+
+    render_motion_title(&mut frame, title_str, sub_str, template, progress);
+
+    slice.copy_from_slice(&frame.data);
     0
 }

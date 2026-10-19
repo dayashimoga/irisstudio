@@ -734,6 +734,102 @@ class IrisEngineController extends ChangeNotifier {
     }
   }
 
+  // --- Phase 4: Chroma Keying ---
+  void toggleClipChromaKey(bool enabled) {
+    if (_selectedClip != null) {
+      _selectedClip!.chromaKey.isEnabled = enabled;
+      _recordAction('Chroma key: ${enabled ? "enabled" : "disabled"}');
+      notifyListeners();
+    }
+  }
+
+  void updateClipChromaKey({
+    double? r,
+    double? g,
+    double? b,
+    double? similarity,
+    double? smoothness,
+    double? spillSuppression,
+  }) {
+    if (_selectedClip != null) {
+      if (r != null) _selectedClip!.chromaKey.keyColorR = r.clamp(0.0, 1.0);
+      if (g != null) _selectedClip!.chromaKey.keyColorG = g.clamp(0.0, 1.0);
+      if (b != null) _selectedClip!.chromaKey.keyColorB = b.clamp(0.0, 1.0);
+      if (similarity != null) {
+        _selectedClip!.chromaKey.similarity = similarity.clamp(0.01, 1.0);
+      }
+      if (smoothness != null) {
+        _selectedClip!.chromaKey.smoothness = smoothness.clamp(0.001, 1.0);
+      }
+      if (spillSuppression != null) {
+        _selectedClip!.chromaKey.spillSuppression = spillSuppression.clamp(0.0, 1.0);
+      }
+      notifyListeners();
+    }
+  }
+
+  void setChromaKeyPreset(String preset) {
+    if (_selectedClip != null) {
+      if (preset == 'green') {
+        _selectedClip!.chromaKey.keyColorR = 0.0;
+        _selectedClip!.chromaKey.keyColorG = 1.0;
+        _selectedClip!.chromaKey.keyColorB = 0.0;
+      } else if (preset == 'blue') {
+        _selectedClip!.chromaKey.keyColorR = 0.0;
+        _selectedClip!.chromaKey.keyColorG = 0.0;
+        _selectedClip!.chromaKey.keyColorB = 1.0;
+      }
+      _selectedClip!.chromaKey.isEnabled = true;
+      _recordAction('Set Chroma Key Preset: $preset');
+      notifyListeners();
+    }
+  }
+
+  // --- Phase 4: Motion Graphics Titles ---
+  List<MotionTitleModel> get motionTitles => _project.motionTitles;
+
+  MotionTitleModel? get activeMotionTitle {
+    for (final title in _project.motionTitles) {
+      if (_playheadSeconds >= title.startTime && _playheadSeconds <= title.endTime) {
+        return title;
+      }
+    }
+    return null;
+  }
+
+  void addMotionTitle({
+    required String title,
+    required String subtitle,
+    MotionTitleTemplate template = MotionTitleTemplate.minimalClean,
+    double duration = 4.0,
+  }) {
+    final item = MotionTitleModel(
+      id: 'title_${DateTime.now().millisecondsSinceEpoch}',
+      title: title,
+      subtitle: subtitle,
+      template: template,
+      startTime: _playheadSeconds,
+      duration: duration,
+    );
+    _project.motionTitles.add(item);
+    _project.motionTitles.sort((a, b) => a.startTime.compareTo(b.startTime));
+    _recordAction('Add Motion Title: $title');
+    notifyListeners();
+  }
+
+  void removeMotionTitle(String id) {
+    _project.motionTitles.removeWhere((t) => t.id == id);
+    _recordAction('Remove Motion Title');
+    notifyListeners();
+  }
+
+  // --- Phase 4: Hardware Acceleration ---
+  HardwareAccelerationInfo get hardwareInfo => _project.hardwareInfo;
+
+  void refreshHardwareInfo() {
+    notifyListeners();
+  }
+
   // --- Stream Copy Optimization ---
   double get streamCopyPercentage {
     final vTracks = _project.tracks
@@ -844,6 +940,15 @@ class IrisEngineController extends ChangeNotifier {
       text: 'Iris Studio: High-Performance Offline Editor',
     );
 
+    final demoMotionTitle = MotionTitleModel(
+      id: 'title_demo_1',
+      title: 'IRIS STUDIO',
+      subtitle: 'High-Performance Rust Workstation',
+      template: MotionTitleTemplate.lowerThirdNews,
+      startTime: 0.5,
+      duration: 4.0,
+    );
+
     return ProjectModel(
       id: 'prj_demo_01',
       name: 'Iris Studio Showcase Project',
@@ -853,6 +958,7 @@ class IrisEngineController extends ChangeNotifier {
       tracks: [overlayTrack, vTrack, aTrack],
       transitions: [demoTransition],
       subtitles: [demoSubtitle],
+      motionTitles: [demoMotionTitle],
     );
   }
 

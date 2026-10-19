@@ -24,6 +24,46 @@ class RationalTimeModel {
 
 enum TrackKindModel { video, audio, overlay }
 
+class ChromaKeyModel {
+  bool isEnabled;
+  double keyColorR;
+  double keyColorG;
+  double keyColorB;
+  double similarity;
+  double smoothness;
+  double spillSuppression;
+
+  ChromaKeyModel({
+    this.isEnabled = false,
+    this.keyColorR = 0.0,
+    this.keyColorG = 1.0,
+    this.keyColorB = 0.0,
+    this.similarity = 0.35,
+    this.smoothness = 0.15,
+    this.spillSuppression = 0.8,
+  });
+
+  ChromaKeyModel copyWith({
+    bool? isEnabled,
+    double? keyColorR,
+    double? keyColorG,
+    double? keyColorB,
+    double? similarity,
+    double? smoothness,
+    double? spillSuppression,
+  }) {
+    return ChromaKeyModel(
+      isEnabled: isEnabled ?? this.isEnabled,
+      keyColorR: keyColorR ?? this.keyColorR,
+      keyColorG: keyColorG ?? this.keyColorG,
+      keyColorB: keyColorB ?? this.keyColorB,
+      similarity: similarity ?? this.similarity,
+      smoothness: smoothness ?? this.smoothness,
+      spillSuppression: spillSuppression ?? this.spillSuppression,
+    );
+  }
+}
+
 class ClipModel {
   final String id;
   final String assetId;
@@ -36,6 +76,7 @@ class ClipModel {
   double rotation;
   double volume;
   bool preservePitch;
+  ChromaKeyModel chromaKey;
 
   ClipModel({
     required this.id,
@@ -49,7 +90,8 @@ class ClipModel {
     this.rotation = 0.0,
     this.volume = 1.0,
     this.preservePitch = true,
-  });
+    ChromaKeyModel? chromaKey,
+  }) : chromaKey = chromaKey ?? ChromaKeyModel();
 
   ClipModel copyWith({
     String? id,
@@ -63,6 +105,7 @@ class ClipModel {
     double? rotation,
     double? volume,
     bool? preservePitch,
+    ChromaKeyModel? chromaKey,
   }) {
     return ClipModel(
       id: id ?? this.id,
@@ -76,6 +119,7 @@ class ClipModel {
       rotation: rotation ?? this.rotation,
       volume: volume ?? this.volume,
       preservePitch: preservePitch ?? this.preservePitch,
+      chromaKey: chromaKey ?? this.chromaKey.copyWith(),
     );
   }
 }
@@ -220,6 +264,60 @@ enum ColorScopeMode {
   rgbParade,
 }
 
+enum MotionTitleTemplate {
+  minimalClean,
+  lowerThirdNews,
+  cinematicCenter,
+  calloutBox,
+}
+
+class MotionTitleModel {
+  final String id;
+  String title;
+  String subtitle;
+  MotionTitleTemplate template;
+  double startTime;
+  double duration;
+
+  MotionTitleModel({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    this.template = MotionTitleTemplate.minimalClean,
+    required this.startTime,
+    this.duration = 4.0,
+  });
+
+  double get endTime => startTime + duration;
+}
+
+class HardwareAccelerationInfo {
+  final String backendName;
+  final bool isAvailable;
+  final bool supportsZeroCopy;
+  final int maxWidth;
+  final int maxHeight;
+  final int maxStreams;
+
+  const HardwareAccelerationInfo({
+    required this.backendName,
+    this.isAvailable = true,
+    this.supportsZeroCopy = true,
+    this.maxWidth = 8192,
+    this.maxHeight = 4320,
+    this.maxStreams = 8,
+  });
+
+  static const HardwareAccelerationInfo defaultDetected = HardwareAccelerationInfo(
+    backendName: 'DirectX 11 Video Acceleration (D3D11VA)',
+    isAvailable: true,
+    supportsZeroCopy: true,
+    maxWidth: 8192,
+    maxHeight: 4320,
+    maxStreams: 8,
+  );
+}
+
 class ProjectModel {
   final String id;
   String name;
@@ -229,6 +327,8 @@ class ProjectModel {
   final List<TrackModel> tracks;
   final List<TransitionModel> transitions;
   final List<SubtitleItemModel> subtitles;
+  final List<MotionTitleModel> motionTitles;
+  HardwareAccelerationInfo hardwareInfo;
   AudioEqModel eq;
   AudioCompressorModel compressor;
   LutPresetModel lutPreset;
@@ -247,6 +347,8 @@ class ProjectModel {
     required this.tracks,
     List<TransitionModel>? transitions,
     List<SubtitleItemModel>? subtitles,
+    List<MotionTitleModel>? motionTitles,
+    HardwareAccelerationInfo? hardwareInfo,
     AudioEqModel? eq,
     AudioCompressorModel? compressor,
     this.lutPreset = LutPresetModel.none,
@@ -257,6 +359,8 @@ class ProjectModel {
     this.scopeMode = ColorScopeMode.none,
   })  : transitions = transitions ?? [],
         subtitles = subtitles ?? [],
+        motionTitles = motionTitles ?? [],
+        hardwareInfo = hardwareInfo ?? HardwareAccelerationInfo.defaultDetected,
         eq = eq ?? AudioEqModel(),
         compressor = compressor ?? AudioCompressorModel(),
         curves = curves ?? RgbCurvesModel(),

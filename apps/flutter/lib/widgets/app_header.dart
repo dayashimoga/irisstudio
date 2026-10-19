@@ -104,6 +104,47 @@ class AppHeader extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Hardware Acceleration Status Badge
+              Tooltip(
+                message: '${controller.hardwareInfo.backendName}\n'
+                    'Zero-Copy: ${controller.hardwareInfo.supportsZeroCopy ? "Enabled" : "Disabled"}\n'
+                    'Max Resolution: ${controller.hardwareInfo.maxWidth}x${controller.hardwareInfo.maxHeight}\n'
+                    'Streams: ${controller.hardwareInfo.maxStreams} concurrent',
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: IrisTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: IrisTheme.border),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.memory,
+                        size: 13,
+                        color: controller.hardwareInfo.isAvailable
+                            ? IrisTheme.accentGreen
+                            : IrisTheme.textMuted,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        controller.hardwareInfo.isAvailable ? 'HW ACCEL' : 'SW DECODE',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                          color: controller.hardwareInfo.isAvailable
+                              ? IrisTheme.accentGreen
+                              : IrisTheme.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+
               // Search / Command Palette
               IconButton(
                 icon: const Icon(Icons.search, size: 16),
