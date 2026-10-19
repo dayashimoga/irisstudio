@@ -893,6 +893,60 @@ class IrisEngineController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // --- Phase 6: Optical Flow Frame Interpolation ---
+  void toggleClipOpticalFlow(bool enabled, {double multiplier = 2.0}) {
+    if (_selectedClip != null) {
+      _selectedClip!.opticalFlow.isEnabled = enabled;
+      _selectedClip!.opticalFlow.slowMotionMultiplier = multiplier;
+      _recordAction('Optical Flow Slow-Mo: ${enabled ? "${multiplier}x active" : "disabled"}');
+      notifyListeners();
+    }
+  }
+
+  void updateClipOpticalFlow({double? multiplier, double? occlusionThreshold}) {
+    if (_selectedClip != null) {
+      if (multiplier != null) {
+        _selectedClip!.opticalFlow.slowMotionMultiplier = multiplier;
+      }
+      if (occlusionThreshold != null) {
+        _selectedClip!.opticalFlow.occlusionThreshold = occlusionThreshold;
+      }
+      notifyListeners();
+    }
+  }
+
+  // --- Phase 6: Smart Rotoscoping & Edge Masking ---
+  void toggleClipSmartMask(bool enabled) {
+    if (_selectedClip != null) {
+      _selectedClip!.smartMask.isEnabled = enabled;
+      _recordAction('Smart Mask: ${enabled ? "enabled" : "disabled"}');
+      notifyListeners();
+    }
+  }
+
+  void updateClipSmartMask({
+    double? contrastThreshold,
+    double? colorTolerance,
+    double? featherRadius,
+    bool? invert,
+  }) {
+    if (_selectedClip != null) {
+      if (contrastThreshold != null) {
+        _selectedClip!.smartMask.contrastThreshold = contrastThreshold.clamp(0.01, 1.0);
+      }
+      if (colorTolerance != null) {
+        _selectedClip!.smartMask.colorTolerance = colorTolerance.clamp(0.01, 1.0);
+      }
+      if (featherRadius != null) {
+        _selectedClip!.smartMask.featherRadius = featherRadius.clamp(0.0, 32.0);
+      }
+      if (invert != null) {
+        _selectedClip!.smartMask.invert = invert;
+      }
+      notifyListeners();
+    }
+  }
+
   // --- Stream Copy Optimization ---
   double get streamCopyPercentage {
     final vTracks = _project.tracks

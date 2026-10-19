@@ -24,4 +24,5 @@ Thumbs.db
 
 # Local export outputs and journals
 exports/
+dist/
 *.iris-journal

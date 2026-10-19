@@ -61,4 +61,9 @@ path = "motion_and_keying_test.rs"
 name = "multicam_and_spatial_audio_test"
 path = "multicam_and_spatial_audio_test.rs"
 
+[[test]]
+name = "optical_flow_and_smart_mask_test"
+path = "optical_flow_and_smart_mask_test.rs"
+
+
 

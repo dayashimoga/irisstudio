@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - Phase 6: Optical Flow, Neural Tools & Production Release (2026-10-19)
+
+### Added
+- Optical Flow Frame Interpolation Engine (`crates/effects/src/optical_flow.rs`):
+  - 2D block-matching motion vector estimation with sub-pixel parabolic peak refinement.
+  - Forward-backward consistency checking detecting occluded and disoccluded pixels to eliminate unphysical ghosting artifacts.
+  - Motion-compensated frame interpolation with adaptive occlusion-aware blending weights and parallel Rayon scanline rasterization.
+  - Slow-motion sequence synthesizer supporting 2x, 4x, and 8x temporal up-conversion.
+- Smart Edge-Detection Rotoscoping & Background Segmentation (`crates/effects/src/smart_mask.rs`):
+  - Normalized 3x3 Sobel edge gradient magnitude field calculation establishing structural boundary barriers.
+  - Interactive seed-based geodesic color affinity relaxation and multi-pass wavefront propagation.
+  - Guided bilateral edge feathering and alpha matte generation producing anti-aliased subject cutouts without jagged contour artifacts.
+- FFI C-ABI Layer Extensions (`crates/ffi/src/api.rs`):
+  - Exported `iris_optical_flow_interpolate`, `iris_smart_mask_generate`, and `iris_smart_mask_apply`. Rebuilt release DLL and deployed to Flutter Windows runners.
+- Flutter Adaptive UI Integration:
+  - Clip Inspector: Optical Flow & AI Slow-Motion card with 2x, 4x, 8x slow-mo rate chips and occlusion guard slider.
+  - Clip Inspector: Smart Rotoscoping & Edge Mask card with edge contrast sensitivity, color tolerance, feather radius, and invert mask toggle.
+  - Updated models (`OpticalFlowModel`, `SmartMaskModel`, `ClipModel`) and engine controller mutators.
+- Production Packaging & Release Engineering:
+  - Windows Inno Setup installer script (`packaging/windows/installer.iss`) with `.irisproj` and `.cube` file associations and uninstaller.
+  - Linux AppImage build script (`packaging/linux/build_appimage.sh`) and desktop entry (`packaging/linux/iris-studio.desktop`).
+  - macOS DMG packaging script (`packaging/macos/create_dmg.sh`) and bundle descriptor (`packaging/macos/Info.plist`).
+  - Release automation script (`scripts/package_release.ps1`) compiling release binaries, packaging portable zip archives, and generating SHA-256 cryptographic checksums.
+  - Comprehensive product User Manual and Operator Guide (`docs/UserManual.md`).
+- Quality Gates & Testing:
+  - Integration test suite `tests/optical_flow_and_smart_mask_test.rs` covering motion estimation, occlusion consistency, intermediate frame synthesis, slow-mo sequences, gradient fields, and smart matting.
+  - Comprehensive Flutter widget tests in `apps/flutter/test/video_workspace_test.dart` asserting Optical Flow controls, slow-mo rates, and Smart Mask sliders.
+  - 100% test pass (48 Rust tests, 3/3 Flutter test suites), zero Clippy warnings, 100% clean formatting, zero Flutter analysis warnings, and verified benchmarks.
+
 ## [0.6.0] - Phase 5: Multi-Camera Switching, Spatial Audio & HDR Tone Mapping (2026-10-19)
 
 ### Added

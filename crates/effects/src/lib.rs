@@ -7,7 +7,9 @@ pub mod hdr;
 pub mod layer;
 pub mod levels;
 pub mod lut;
+pub mod optical_flow;
 pub mod retouch;
+pub mod smart_mask;
 pub mod tracker;
 
 pub use adjustment::{apply_adjustments, AdjustmentParameters};
@@ -22,5 +24,13 @@ pub use hdr::{
 pub use layer::{compose_photo_layers, PhotoLayer};
 pub use levels::{apply_levels, LevelsParameters};
 pub use lut::{Lut3D, LutPreset};
+pub use optical_flow::{
+    check_forward_backward_consistency, estimate_motion_field, generate_slow_motion_sequence,
+    interpolate_frame, MotionField, MotionVector, OpticalFlowConfig,
+};
 pub use retouch::{apply_brush_stroke, apply_clone_stamp, apply_heal_brush, apply_red_eye_removal};
+pub use smart_mask::{
+    apply_smart_mask, compute_edge_gradient_field, generate_smart_mask, ContourBoundingBox,
+    SeedPoint, SmartMaskParams,
+};
 pub use tracker::{MotionTracker, TrackBox, TrackPoint};

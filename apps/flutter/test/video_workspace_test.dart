@@ -231,6 +231,48 @@ void main() {
     // Verify amber transition badge rendered on timeline
     expect(find.textContaining('Iris Round'), findsAtLeastNWidgets(1));
 
+    // Phase 6: Verify Optical Flow & AI Slow-Motion Section in Clip Inspector
+    await tester.ensureVisible(find.text('OPTICAL FLOW & AI SLOW-MO'));
+    expect(find.text('OPTICAL FLOW & AI SLOW-MO'), findsOneWidget);
+
+    controller.toggleClipOpticalFlow(true, multiplier: 2.0);
+    await tester.pumpAndSettle();
+    expect(controller.selectedClip?.opticalFlow.isEnabled, isTrue);
+    expect(find.text('Slow-Motion Rate:'), findsOneWidget);
+    expect(find.text('2x Smooth'), findsOneWidget);
+    expect(find.text('4x Cinema Fluid'), findsOneWidget);
+    expect(find.text('8x Super Slo-Mo'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('4x Cinema Fluid'));
+    await tester.tap(find.text('4x Cinema Fluid'));
+    await tester.pumpAndSettle();
+    expect(controller.selectedClip?.opticalFlow.slowMotionMultiplier, 4.0);
+    expect(find.text('Occlusion Guard'), findsOneWidget);
+
+    // Phase 6: Verify Smart Rotoscoping & Edge Mask Section in Clip Inspector
+    await tester.ensureVisible(find.text('SMART ROTOSCOPING & EDGE MASK'));
+    expect(find.text('SMART ROTOSCOPING & EDGE MASK'), findsOneWidget);
+
+    controller.toggleClipSmartMask(true);
+    await tester.pumpAndSettle();
+    expect(controller.selectedClip?.smartMask.isEnabled, isTrue);
+    expect(find.text('Edge Contrast Sensitivity'), findsOneWidget);
+    expect(find.text('Color Tolerance'), findsOneWidget);
+    expect(find.text('Feather Radius'), findsOneWidget);
+    expect(find.text('Invert Subject Mask'), findsOneWidget);
+
+    controller.updateClipSmartMask(
+      contrastThreshold: 0.35,
+      colorTolerance: 0.40,
+      featherRadius: 4.0,
+      invert: true,
+    );
+    await tester.pumpAndSettle();
+    expect(controller.selectedClip?.smartMask.contrastThreshold, 0.35);
+    expect(controller.selectedClip?.smartMask.colorTolerance, 0.40);
+    expect(controller.selectedClip?.smartMask.featherRadius, 4.0);
+    expect(controller.selectedClip?.smartMask.invert, isTrue);
+
     // Close Clip Inspector
     controller.selectClip(null);
     await tester.pumpAndSettle();

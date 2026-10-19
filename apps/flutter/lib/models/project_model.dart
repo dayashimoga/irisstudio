@@ -92,6 +92,62 @@ class SpatialAudioModel {
   }
 }
 
+class OpticalFlowModel {
+  bool isEnabled;
+  double slowMotionMultiplier;
+  double occlusionThreshold;
+
+  OpticalFlowModel({
+    this.isEnabled = false,
+    this.slowMotionMultiplier = 2.0,
+    this.occlusionThreshold = 1.5,
+  });
+
+  OpticalFlowModel copyWith({
+    bool? isEnabled,
+    double? slowMotionMultiplier,
+    double? occlusionThreshold,
+  }) {
+    return OpticalFlowModel(
+      isEnabled: isEnabled ?? this.isEnabled,
+      slowMotionMultiplier: slowMotionMultiplier ?? this.slowMotionMultiplier,
+      occlusionThreshold: occlusionThreshold ?? this.occlusionThreshold,
+    );
+  }
+}
+
+class SmartMaskModel {
+  bool isEnabled;
+  double contrastThreshold;
+  double colorTolerance;
+  double featherRadius;
+  bool invert;
+
+  SmartMaskModel({
+    this.isEnabled = false,
+    this.contrastThreshold = 0.15,
+    this.colorTolerance = 0.25,
+    this.featherRadius = 2.0,
+    this.invert = false,
+  });
+
+  SmartMaskModel copyWith({
+    bool? isEnabled,
+    double? contrastThreshold,
+    double? colorTolerance,
+    double? featherRadius,
+    bool? invert,
+  }) {
+    return SmartMaskModel(
+      isEnabled: isEnabled ?? this.isEnabled,
+      contrastThreshold: contrastThreshold ?? this.contrastThreshold,
+      colorTolerance: colorTolerance ?? this.colorTolerance,
+      featherRadius: featherRadius ?? this.featherRadius,
+      invert: invert ?? this.invert,
+    );
+  }
+}
+
 class ClipModel {
   final String id;
   final String assetId;
@@ -106,6 +162,8 @@ class ClipModel {
   bool preservePitch;
   ChromaKeyModel chromaKey;
   SpatialAudioModel spatialAudio;
+  OpticalFlowModel opticalFlow;
+  SmartMaskModel smartMask;
 
   ClipModel({
     required this.id,
@@ -121,8 +179,12 @@ class ClipModel {
     this.preservePitch = true,
     ChromaKeyModel? chromaKey,
     SpatialAudioModel? spatialAudio,
+    OpticalFlowModel? opticalFlow,
+    SmartMaskModel? smartMask,
   })  : chromaKey = chromaKey ?? ChromaKeyModel(),
-        spatialAudio = spatialAudio ?? SpatialAudioModel();
+        spatialAudio = spatialAudio ?? SpatialAudioModel(),
+        opticalFlow = opticalFlow ?? OpticalFlowModel(),
+        smartMask = smartMask ?? SmartMaskModel();
 
   ClipModel copyWith({
     String? id,
@@ -138,6 +200,8 @@ class ClipModel {
     bool? preservePitch,
     ChromaKeyModel? chromaKey,
     SpatialAudioModel? spatialAudio,
+    OpticalFlowModel? opticalFlow,
+    SmartMaskModel? smartMask,
   }) {
     return ClipModel(
       id: id ?? this.id,
@@ -153,6 +217,8 @@ class ClipModel {
       preservePitch: preservePitch ?? this.preservePitch,
       chromaKey: chromaKey ?? this.chromaKey.copyWith(),
       spatialAudio: spatialAudio ?? this.spatialAudio.copyWith(),
+      opticalFlow: opticalFlow ?? this.opticalFlow.copyWith(),
+      smartMask: smartMask ?? this.smartMask.copyWith(),
     );
   }
 }

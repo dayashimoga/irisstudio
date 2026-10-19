@@ -1048,6 +1048,20 @@ class VideoWorkspace extends StatelessWidget {
 
           // Motion Tracking (NCC Sub-pixel) Section
           _buildMotionTrackingSection(context, clip),
+
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // Phase 6: Optical Flow Frame Interpolation
+          _buildOpticalFlowSection(context, clip),
+
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // Phase 6: Smart Rotoscoping & Edge Masking
+          _buildSmartMaskSection(context, clip),
         ],
       ),
     );
@@ -2406,6 +2420,177 @@ class VideoWorkspace extends StatelessWidget {
           const SizedBox(height: 4),
           const Text(
             'Spherical Head HRTF (Woodworth ITD + Shadow ILD Filter)',
+            style: TextStyle(fontSize: 9, color: IrisTheme.textMuted),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // --- Phase 6: Optical Flow Frame Interpolation Section ---
+  Widget _buildOpticalFlowSection(BuildContext context, ClipModel clip) {
+    final flow = clip.opticalFlow;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Expanded(
+              child: Row(
+                children: [
+                  Icon(Icons.slow_motion_video, size: 16, color: IrisTheme.primaryCyan),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'OPTICAL FLOW & AI SLOW-MO',
+                      style: TextStyle(
+                        color: IrisTheme.textMuted,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: flow.isEnabled,
+              activeThumbColor: IrisTheme.primaryCyan,
+              onChanged: (val) => controller.toggleClipOpticalFlow(val, multiplier: flow.slowMotionMultiplier),
+            ),
+          ],
+        ),
+        if (flow.isEnabled) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Slow-Motion Rate:',
+            style: TextStyle(fontSize: 10, color: IrisTheme.textSecondary),
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              ('2x Smooth', 2.0),
+              ('4x Cinema Fluid', 4.0),
+              ('8x Super Slo-Mo', 8.0),
+            ].map((item) {
+              final isSelected = (flow.slowMotionMultiplier - item.$2).abs() < 1e-2;
+              return ChoiceChip(
+                selected: isSelected,
+                label: Text(item.$1, style: const TextStyle(fontSize: 10)),
+                backgroundColor: IrisTheme.surfaceLight,
+                selectedColor: IrisTheme.primaryCyan.withValues(alpha: 0.25),
+                onSelected: (_) => controller.updateClipOpticalFlow(multiplier: item.$2),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 8),
+          _buildInspectorSlider(
+            label: 'Occlusion Guard',
+            value: flow.occlusionThreshold,
+            min: 0.5,
+            max: 5.0,
+            unit: ' px',
+            onChanged: (val) => controller.updateClipOpticalFlow(occlusionThreshold: val),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Bidirectional Block Matching & Forward-Backward Occlusion Guard',
+            style: TextStyle(fontSize: 9, color: IrisTheme.textMuted),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // --- Phase 6: Smart Rotoscoping & Edge Mask Section ---
+  Widget _buildSmartMaskSection(BuildContext context, ClipModel clip) {
+    final mask = clip.smartMask;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Expanded(
+              child: Row(
+                children: [
+                  Icon(Icons.auto_fix_high, size: 16, color: IrisTheme.primaryCyan),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'SMART ROTOSCOPING & EDGE MASK',
+                      style: TextStyle(
+                        color: IrisTheme.textMuted,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: mask.isEnabled,
+              activeThumbColor: IrisTheme.primaryCyan,
+              onChanged: (val) => controller.toggleClipSmartMask(val),
+            ),
+          ],
+        ),
+        if (mask.isEnabled) ...[
+          const SizedBox(height: 8),
+          _buildInspectorSlider(
+            label: 'Edge Contrast Sensitivity',
+            value: mask.contrastThreshold * 100.0,
+            min: 1.0,
+            max: 100.0,
+            unit: '%',
+            onChanged: (val) => controller.updateClipSmartMask(contrastThreshold: val / 100.0),
+          ),
+          _buildInspectorSlider(
+            label: 'Color Tolerance',
+            value: mask.colorTolerance * 100.0,
+            min: 1.0,
+            max: 100.0,
+            unit: '%',
+            onChanged: (val) => controller.updateClipSmartMask(colorTolerance: val / 100.0),
+          ),
+          _buildInspectorSlider(
+            label: 'Feather Radius',
+            value: mask.featherRadius,
+            min: 0.0,
+            max: 16.0,
+            unit: ' px',
+            onChanged: (val) => controller.updateClipSmartMask(featherRadius: val),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Expanded(
+                child: Text(
+                  'Invert Subject Mask',
+                  style: TextStyle(fontSize: 11, color: IrisTheme.textPrimary),
+                ),
+              ),
+              Switch(
+                value: mask.invert,
+                activeThumbColor: IrisTheme.primaryCyan,
+                onChanged: (val) => controller.updateClipSmartMask(invert: val),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Sobel Gradient Barrier & Geodesic Relaxation Matting',
             style: TextStyle(fontSize: 9, color: IrisTheme.textMuted),
           ),
         ],

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Iris Studio
+GenericName=Video and Photo Editor
+Comment=Professional Offline Video and Image Editing Workstation
+Exec=iris_studio %F
+Icon=iris_studio
+Terminal=false
+Type=Application
+Categories=AudioVideo;AudioVideoEditing;Graphics;Photography;
+MimeType=application/x-irisproj;video/mp4;video/quicktime;image/png;image/jpeg;image/webp;
+StartupNotify=true
+StartupWMClass=iris_studio
+Keywords=video;audio;photo;editor;grading;hdr;multicam;offline;

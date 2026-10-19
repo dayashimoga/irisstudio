@@ -9,8 +9,10 @@ use iris_core::{Dimensions, PixelFormat, Point, RationalTime, Rect};
 use iris_effects::{
     apply_adjustments, apply_brush_stroke, apply_chroma_key, apply_clone_stamp, apply_denoise,
     apply_gaussian_blur, apply_hdr_tonemap, apply_heal_brush, apply_levels, apply_red_eye_removal,
-    apply_unsharp_mask, apply_vignette, AdjustmentParameters, ChromaKeyParams, HdrToneMapParams,
-    HdrTransferFunction, LevelsParameters, Lut3D, LutPreset, MotionTracker, RgbCurves, SplinePoint,
+    apply_smart_mask, apply_unsharp_mask, apply_vignette, check_forward_backward_consistency,
+    estimate_motion_field, generate_smart_mask, interpolate_frame, AdjustmentParameters,
+    ChromaKeyParams, HdrToneMapParams, HdrTransferFunction, LevelsParameters, Lut3D, LutPreset,
+    MotionTracker, OpticalFlowConfig, RgbCurves, SeedPoint, SmartMaskParams, SplinePoint,
     ToneMappingAlgorithm,
 };
 use iris_export::{
@@ -1698,5 +1700,112 @@ pub extern "C" fn iris_multicam_render_quad(
     let out_len = (out_w * out_h * 4) as usize;
     let out_slice = unsafe { slice::from_raw_parts_mut(out_pixels, out_len) };
     out_slice.copy_from_slice(&quad_frame.data);
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_optical_flow_interpolate(
+    frame_0: *const u8,
+    frame_1: *const u8,
+    out_pixels: *mut u8,
+    width: u32,
+    height: u32,
+    t: f32,
+) -> c_int {
+    if frame_0.is_null() || frame_1.is_null() || out_pixels.is_null() || width == 0 || height == 0 {
+        return -1;
+    }
+
+    let w = width as usize;
+    let h = height as usize;
+    let len = w * h * 4;
+
+    let f0 = unsafe { slice::from_raw_parts(frame_0, len) };
+    let f1 = unsafe { slice::from_raw_parts(frame_1, len) };
+    let out = unsafe { slice::from_raw_parts_mut(out_pixels, len) };
+
+    let config = OpticalFlowConfig::default();
+    let mut fwd = estimate_motion_field(f0, f1, w, h, &config);
+    let bwd = estimate_motion_field(f1, f0, w, h, &config);
+    check_forward_backward_consistency(&mut fwd, &bwd, config.occlusion_threshold);
+
+    interpolate_frame(f0, f1, out, w, h, &fwd, &bwd, t);
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_smart_mask_generate(
+    src_rgba: *const u8,
+    out_mask: *mut u8,
+    width: u32,
+    height: u32,
+    seed_x: u32,
+    seed_y: u32,
+    contrast_threshold: f32,
+    color_tolerance: f32,
+    feather_radius: u32,
+    invert: c_int,
+) -> c_int {
+    if src_rgba.is_null() || out_mask.is_null() || width == 0 || height == 0 {
+        return -1;
+    }
+
+    let w = width as usize;
+    let h = height as usize;
+    let in_len = w * h * 4;
+    let out_len = w * h;
+
+    let src = unsafe { slice::from_raw_parts(src_rgba, in_len) };
+    let out = unsafe { slice::from_raw_parts_mut(out_mask, out_len) };
+
+    let seeds = vec![SeedPoint {
+        x: seed_x.min(width - 1),
+        y: seed_y.min(height - 1),
+        is_foreground: true,
+    }];
+
+    let params = SmartMaskParams {
+        contrast_threshold: if contrast_threshold > 0.0 {
+            contrast_threshold
+        } else {
+            0.15
+        },
+        color_tolerance: if color_tolerance > 0.0 {
+            color_tolerance
+        } else {
+            0.25
+        },
+        feather_radius: feather_radius as usize,
+        invert: invert != 0,
+        iterations: 3,
+    };
+
+    let mask = generate_smart_mask(src, w, h, &seeds, None, &params);
+    out.copy_from_slice(&mask);
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_smart_mask_apply(
+    src_rgba: *const u8,
+    mask: *const u8,
+    out_rgba: *mut u8,
+    width: u32,
+    height: u32,
+) -> c_int {
+    if src_rgba.is_null() || mask.is_null() || out_rgba.is_null() || width == 0 || height == 0 {
+        return -1;
+    }
+
+    let w = width as usize;
+    let h = height as usize;
+    let rgba_len = w * h * 4;
+    let mask_len = w * h;
+
+    let src = unsafe { slice::from_raw_parts(src_rgba, rgba_len) };
+    let m = unsafe { slice::from_raw_parts(mask, mask_len) };
+    let out = unsafe { slice::from_raw_parts_mut(out_rgba, rgba_len) };
+
+    apply_smart_mask(src, m, out, w, h);
     0
 }
