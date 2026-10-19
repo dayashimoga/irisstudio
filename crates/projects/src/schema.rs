@@ -34,6 +34,16 @@ pub struct Project {
     pub photo_adjustments: Option<AdjustmentParameters>,
     pub photo_crop: Option<Rect>,
     pub photo_straighten: f32,
+    #[serde(default)]
+    pub photo_rotation: i32,
+    #[serde(default)]
+    pub photo_flip_h: bool,
+    #[serde(default)]
+    pub photo_flip_v: bool,
+    #[serde(default)]
+    pub photo_lens_k1: f32,
+    #[serde(default)]
+    pub photo_lens_k2: f32,
 }
 
 impl Project {
@@ -51,6 +61,11 @@ impl Project {
             photo_adjustments: Some(AdjustmentParameters::default()),
             photo_crop: None,
             photo_straighten: 0.0,
+            photo_rotation: 0,
+            photo_flip_h: false,
+            photo_flip_v: false,
+            photo_lens_k1: 0.0,
+            photo_lens_k2: 0.0,
         }
     }
 

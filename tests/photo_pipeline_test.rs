@@ -38,7 +38,7 @@ fn test_image_transforms_pipeline() {
 }
 
 #[test]
-fn test_png_and_jpeg_codec_roundtrip() {
+fn test_png_and_jpeg_and_webp_codec_roundtrip() {
     let img = RgbaImage::create_test_gradient(64, 64);
 
     // PNG Roundtrip
@@ -56,4 +56,54 @@ fn test_png_and_jpeg_codec_roundtrip() {
     let decoded_jpeg = decode_image(&jpeg_bytes).expect("JPEG decode failed");
     assert_eq!(decoded_jpeg.width, 64);
     assert_eq!(decoded_jpeg.height, 64);
+
+    // WebP Roundtrip
+    let webp_bytes = iris_images::encode_webp(&img).expect("WebP encode failed");
+    assert!(!webp_bytes.is_empty());
+
+    let decoded_webp = decode_image(&webp_bytes).expect("WebP decode failed");
+    assert_eq!(decoded_webp.width, 64);
+    assert_eq!(decoded_webp.height, 64);
+}
+
+#[test]
+fn test_exif_orientation_normalization() {
+    let img = RgbaImage::create_test_gradient(40, 20); // 40 wide, 20 tall
+
+    // Tag 1: Normal (identity)
+    let o1 = iris_images::apply_exif_orientation(&img, 1);
+    assert_eq!(o1.width, 40);
+    assert_eq!(o1.height, 20);
+
+    // Tag 6: Rotate 90 CW (transposed dimensions)
+    let o6 = iris_images::apply_exif_orientation(&img, 6);
+    assert_eq!(o6.width, 20);
+    assert_eq!(o6.height, 40);
+
+    // Tag 3: Rotate 180 (same dimensions)
+    let o3 = iris_images::apply_exif_orientation(&img, 3);
+    assert_eq!(o3.width, 40);
+    assert_eq!(o3.height, 20);
+}
+
+#[test]
+fn test_lens_distortion_and_perspective_warp() {
+    let img = RgbaImage::create_test_gradient(100, 100);
+
+    // Radial lens correction
+    let corrected = iris_images::apply_lens_correction(&img, -0.15, 0.05);
+    assert_eq!(corrected.width, 100);
+    assert_eq!(corrected.height, 100);
+
+    // Perspective warp from trapezoid to rectangle
+    let quad = [
+        iris_core::Point::new(10.0, 10.0),
+        iris_core::Point::new(90.0, 15.0),
+        iris_core::Point::new(85.0, 85.0),
+        iris_core::Point::new(15.0, 80.0),
+    ];
+
+    let warped = iris_images::apply_perspective_warp(&img, quad, 80, 80).expect("Warp failed");
+    assert_eq!(warped.width, 80);
+    assert_eq!(warped.height, 80);
 }

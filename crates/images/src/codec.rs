@@ -65,3 +65,18 @@ pub fn encode_jpeg(img: &RgbaImage, quality: u8) -> IrisResult<Vec<u8>> {
 
     Ok(bytes)
 }
+
+pub fn encode_webp(img: &RgbaImage) -> IrisResult<Vec<u8>> {
+    let mut bytes: Vec<u8> = Vec::new();
+    let encoder = image::codecs::webp::WebPEncoder::new_lossless(Cursor::new(&mut bytes));
+    image::ImageEncoder::write_image(
+        encoder,
+        &img.pixels,
+        img.width,
+        img.height,
+        image::ExtendedColorType::Rgba8,
+    )
+    .map_err(|e| IrisError::EncodeError(e.to_string()))?;
+
+    Ok(bytes)
+}

@@ -24,6 +24,9 @@ fn main() {
     // 4. Compositor Multi-track Timeline Render Benchmark
     bench_compositor_timeline();
 
+    // 5. Phase 1 Photo MVP Advanced Tools Benchmark
+    bench_phase1_photo_tools();
+
     println!("============================================================");
     println!("All performance baselines verified successfully.");
 }
@@ -150,5 +153,54 @@ fn bench_compositor_timeline() {
     println!(
         "        Render Latency: {:.2} ms/frame | Sustained Rate: {:.1} fps",
         per_frame_ms, fps
+    );
+}
+
+fn bench_phase1_photo_tools() {
+    let width = 1920;
+    let height = 1080;
+    let total_pixels = width as usize * height as usize;
+    let mut pixels = vec![128u8; total_pixels * 4];
+
+    // 1. Levels Adjustment
+    let levels = iris_effects::LevelsParameters {
+        in_black: 15.0,
+        in_gamma: 1.2,
+        in_white: 240.0,
+        out_black: 5.0,
+        out_white: 250.0,
+    };
+    let start_levels = Instant::now();
+    for _ in 0..20 {
+        iris_effects::apply_levels(&mut pixels, &levels);
+    }
+    let levels_ms = start_levels.elapsed().as_secs_f64() * 1000.0 / 20.0;
+
+    // 2. Radial Lens Correction
+    let img = RgbaImage::from_raw(width, height, pixels.clone()).unwrap();
+    let start_lens = Instant::now();
+    let _corrected = iris_images::apply_lens_correction(&img, -0.1, 0.02);
+    let lens_ms = start_lens.elapsed().as_secs_f64() * 1000.0;
+
+    // 3. Perspective Warp (1080p)
+    let quad = [
+        iris_core::Point::new(50.0, 50.0),
+        iris_core::Point::new(1870.0, 40.0),
+        iris_core::Point::new(1800.0, 1020.0),
+        iris_core::Point::new(100.0, 1040.0),
+    ];
+    let start_warp = Instant::now();
+    let _warped = iris_images::apply_perspective_warp(&img, quad, 1920, 1080).unwrap();
+    let warp_ms = start_warp.elapsed().as_secs_f64() * 1000.0;
+
+    // 4. Edge-preserving Denoise (radius 2)
+    let start_denoise = Instant::now();
+    iris_effects::apply_denoise(&mut pixels, width, height, 2, 25.0);
+    let denoise_ms = start_denoise.elapsed().as_secs_f64() * 1000.0;
+
+    println!("[BENCH] Phase 1 Advanced Photo Pipeline (1080p):");
+    println!(
+        "        Levels LUT: {:.2} ms | Lens Correction: {:.2} ms | Perspective Warp: {:.2} ms | Bilateral Denoise: {:.2} ms",
+        levels_ms, lens_ms, warp_ms, denoise_ms
     );
 }

@@ -1,3 +1,48 @@
+enum RetouchToolMode {
+  none,
+  redEye,
+  cloneStamp,
+  healBrush,
+  brush,
+  eraser,
+}
+
+enum LayerBlendMode {
+  normal('Normal'),
+  multiply('Multiply'),
+  screen('Screen'),
+  overlay('Overlay'),
+  darken('Darken'),
+  lighten('Lighten'),
+  colorDodge('Color Dodge'),
+  colorBurn('Color Burn'),
+  softLight('Soft Light'),
+  hardLight('Hard Light'),
+  difference('Difference'),
+  exclusion('Exclusion');
+
+  final String label;
+  const LayerBlendMode(this.label);
+}
+
+class PhotoLayerModel {
+  final String id;
+  String name;
+  double opacity; // 0.0 to 1.0
+  LayerBlendMode blendMode;
+  bool isVisible;
+  bool isLocked;
+
+  PhotoLayerModel({
+    required this.id,
+    required this.name,
+    this.opacity = 1.0,
+    this.blendMode = LayerBlendMode.normal,
+    this.isVisible = true,
+    this.isLocked = false,
+  });
+}
+
 class PhotoAdjustments {
   double exposure; // -5.0 to +5.0 EV
   double contrast; // -100.0 to +100.0
@@ -10,6 +55,11 @@ class PhotoAdjustments {
   double sharpening; // 0.0 to 100.0
   double blur; // 0.0 to 20.0
   double vignette; // -100.0 to +100.0
+  double denoise; // 0.0 to 100.0
+  double levelsInBlack; // 0.0 to 255.0
+  double levelsGamma; // 0.1 to 10.0
+  double levelsInWhite; // 0.0 to 255.0
+  double lensK1; // -100.0 to +100.0
 
   PhotoAdjustments({
     this.exposure = 0.0,
@@ -23,6 +73,11 @@ class PhotoAdjustments {
     this.sharpening = 0.0,
     this.blur = 0.0,
     this.vignette = 0.0,
+    this.denoise = 0.0,
+    this.levelsInBlack = 0.0,
+    this.levelsGamma = 1.0,
+    this.levelsInWhite = 255.0,
+    this.lensK1 = 0.0,
   });
 
   PhotoAdjustments copyWith({
@@ -37,6 +92,11 @@ class PhotoAdjustments {
     double? sharpening,
     double? blur,
     double? vignette,
+    double? denoise,
+    double? levelsInBlack,
+    double? levelsGamma,
+    double? levelsInWhite,
+    double? lensK1,
   }) {
     return PhotoAdjustments(
       exposure: exposure ?? this.exposure,
@@ -50,6 +110,11 @@ class PhotoAdjustments {
       sharpening: sharpening ?? this.sharpening,
       blur: blur ?? this.blur,
       vignette: vignette ?? this.vignette,
+      denoise: denoise ?? this.denoise,
+      levelsInBlack: levelsInBlack ?? this.levelsInBlack,
+      levelsGamma: levelsGamma ?? this.levelsGamma,
+      levelsInWhite: levelsInWhite ?? this.levelsInWhite,
+      lensK1: lensK1 ?? this.lensK1,
     );
   }
 
@@ -65,6 +130,11 @@ class PhotoAdjustments {
     sharpening = 0.0;
     blur = 0.0;
     vignette = 0.0;
+    denoise = 0.0;
+    levelsInBlack = 0.0;
+    levelsGamma = 1.0;
+    levelsInWhite = 255.0;
+    lensK1 = 0.0;
   }
 
   Map<String, dynamic> toJson() => {

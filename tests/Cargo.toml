@@ -40,3 +40,7 @@ path = "audio_test.rs"
 [[test]]
 name = "export_test"
 path = "export_test.rs"
+
+[[test]]
+name = "batch_export_test"
+path = "batch_export_test.rs"

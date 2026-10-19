@@ -148,3 +148,76 @@ pub fn apply_gaussian_blur(pixels: &mut [u8], width: u32, height: u32, radius: f
             dst_px[3] = temp[(y * w + x) * 4 + 3];
         });
 }
+
+/// Fast edge-preserving bilateral-approximation denoise filter.
+/// radius: window radius (typically 1 to 5)
+/// strength: 0.0 to 100.0 (controls photometric threshold and smoothing amount)
+pub fn apply_denoise(pixels: &mut [u8], width: u32, height: u32, radius: i32, strength: f32) {
+    if radius <= 0 || strength <= 0.0 {
+        return;
+    }
+
+    let w = width as usize;
+    let h = height as usize;
+    let r = radius.clamp(1, 5);
+    let orig = pixels.to_vec();
+
+    // Range sigma derived from strength
+    let sigma_range = (strength * 1.5).max(5.0);
+    let sigma_range_sq2 = 2.0 * sigma_range * sigma_range;
+    let sigma_space_sq2 = 2.0 * (r as f32) * (r as f32);
+
+    pixels
+        .par_chunks_mut(w * 4)
+        .enumerate()
+        .for_each(|(y, dst_row)| {
+            for x in 0..w {
+                let center_off = (y * w + x) * 4;
+                let c_r = orig[center_off] as f32;
+                let c_g = orig[center_off + 1] as f32;
+                let c_b = orig[center_off + 2] as f32;
+
+                let mut sum_r = 0.0f32;
+                let mut sum_g = 0.0f32;
+                let mut sum_b = 0.0f32;
+                let mut total_w = 0.0f32;
+
+                for ky in -r..=r {
+                    let sy = (y as i32 + ky).clamp(0, h as i32 - 1) as usize;
+                    let dy2 = (ky * ky) as f32;
+
+                    for kx in -r..=r {
+                        let sx = (x as i32 + kx).clamp(0, w as i32 - 1) as usize;
+                        let dx2 = (kx * kx) as f32;
+                        let dist_space_sq = dx2 + dy2;
+
+                        let s_off = (sy * w + sx) * 4;
+                        let s_r = orig[s_off] as f32;
+                        let s_g = orig[s_off + 1] as f32;
+                        let s_b = orig[s_off + 2] as f32;
+
+                        let dr = s_r - c_r;
+                        let dg = s_g - c_g;
+                        let db = s_b - c_b;
+                        let dist_color_sq = dr * dr + dg * dg + db * db;
+
+                        let w_space = (-dist_space_sq / sigma_space_sq2).exp();
+                        let w_color = (-dist_color_sq / sigma_range_sq2).exp();
+                        let weight = w_space * w_color;
+
+                        sum_r += s_r * weight;
+                        sum_g += s_g * weight;
+                        sum_b += s_b * weight;
+                        total_w += weight;
+                    }
+                }
+
+                let px_off = x * 4;
+                if total_w > 0.0001 {
+                    dst_row[px_off] = (sum_r / total_w).round().clamp(0.0, 255.0) as u8;
+                    dst_row[px_off + 1] = (sum_g / total_w).round().clamp(0.0, 255.0) as u8;
+                    dst_row[px_off + 2] = (sum_b / total_w).round().clamp(0.0, 255.0) as u8;
+                }
+            }
+        });
+}
