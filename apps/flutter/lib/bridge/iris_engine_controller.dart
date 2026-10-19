@@ -830,6 +830,69 @@ class IrisEngineController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // --- Phase 5: Multi-Camera Switching ---
+  MultiCamGroupModel get multiCam => _project.multiCamGroup;
+
+  void switchMultiCamAngle(String angleId) {
+    if (_project.multiCamGroup.activeAngleId != angleId) {
+      _project.multiCamGroup.activeAngleId = angleId;
+      _recordAction('Switched Multi-Cam Angle: $angleId');
+      notifyListeners();
+    }
+  }
+
+  void toggleMultiCamQuadView(bool active) {
+    _project.multiCamGroup.isQuadViewActive = active;
+    notifyListeners();
+  }
+
+  // --- Phase 5: 3D Spatial Audio & Binaural Panning ---
+  void toggleClipSpatialAudio(bool enabled) {
+    if (_selectedClip != null) {
+      _selectedClip!.spatialAudio.isEnabled = enabled;
+      _recordAction('3D Spatial Audio: ${enabled ? "enabled" : "disabled"}');
+      notifyListeners();
+    }
+  }
+
+  void updateClipSpatialAudio({
+    double? azimuthDeg,
+    double? elevationDeg,
+    double? distanceMeters,
+  }) {
+    if (_selectedClip != null) {
+      if (azimuthDeg != null) {
+        _selectedClip!.spatialAudio.azimuthDeg = azimuthDeg.clamp(-180.0, 180.0);
+      }
+      if (elevationDeg != null) {
+        _selectedClip!.spatialAudio.elevationDeg = elevationDeg.clamp(-90.0, 90.0);
+      }
+      if (distanceMeters != null) {
+        _selectedClip!.spatialAudio.distanceMeters = distanceMeters.clamp(0.1, 10.0);
+      }
+      notifyListeners();
+    }
+  }
+
+  // --- Phase 5: HDR Tone Mapping ---
+  HdrToneMapModel get hdrSettings => _project.hdrSettings;
+
+  void updateHdrSettings({
+    bool? isEnabled,
+    String? transferFunction,
+    String? algorithm,
+    double? exposureStops,
+    double? targetNits,
+  }) {
+    if (isEnabled != null) _project.hdrSettings.isEnabled = isEnabled;
+    if (transferFunction != null) _project.hdrSettings.transferFunction = transferFunction;
+    if (algorithm != null) _project.hdrSettings.algorithm = algorithm;
+    if (exposureStops != null) _project.hdrSettings.exposureStops = exposureStops.clamp(-4.0, 4.0);
+    if (targetNits != null) _project.hdrSettings.targetNits = targetNits.clamp(50.0, 2000.0);
+    _recordAction('Updated HDR Tone Mapping');
+    notifyListeners();
+  }
+
   // --- Stream Copy Optimization ---
   double get streamCopyPercentage {
     final vTracks = _project.tracks

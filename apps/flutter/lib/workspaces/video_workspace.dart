@@ -124,6 +124,24 @@ class VideoWorkspace extends StatelessWidget {
                     );
                   }).toList(),
                 ),
+                const SizedBox(width: 12),
+                const SizedBox(height: 16, child: VerticalDivider(width: 1, color: IrisTheme.border)),
+                const SizedBox(width: 12),
+                FilterChip(
+                  avatar: Icon(
+                    Icons.grid_view,
+                    size: 13,
+                    color: controller.multiCam.isQuadViewActive
+                        ? IrisTheme.primaryCyan
+                        : IrisTheme.textMuted,
+                  ),
+                  label: const Text('Quad View', style: TextStyle(fontSize: 10)),
+                  selected: controller.multiCam.isQuadViewActive,
+                  backgroundColor: IrisTheme.surfaceLight,
+                  selectedColor: IrisTheme.primaryCyan.withValues(alpha: 0.25),
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (val) => controller.toggleMultiCamQuadView(val),
+                ),
               ],
             ),
             ),
@@ -157,6 +175,10 @@ class VideoWorkspace extends StatelessWidget {
                           subtitles: controller.project.subtitles,
                         ),
                       ),
+
+                      // Phase 5: Multi-Camera Quad-View 2x2 Grid Monitor Overlay
+                      if (controller.multiCam.isQuadViewActive)
+                        _buildMultiCamQuadViewOverlay(context),
 
                       // Real-time Diagnostic Scope Overlay PIP
                       if (controller.scopeMode != ColorScopeMode.none)
@@ -755,6 +777,20 @@ class VideoWorkspace extends StatelessWidget {
 
           // Motion Graphics Titles & Lower-Thirds
           _buildMotionTitlesSection(context),
+
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // Multi-Camera Live Angle Switcher
+          _buildMultiCamSwitcherSection(context),
+
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // HDR Tone Mapping (ACES / PQ / HLG)
+          _buildHdrToneMappingSection(context),
         ],
       ),
     );
@@ -959,6 +995,13 @@ class VideoWorkspace extends StatelessWidget {
               controller.updateClip(clip);
             },
           ),
+
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+
+          // 3D Spatial Audio & Binaural Panning
+          _buildSpatialAudioSection(context, clip),
 
           const SizedBox(height: 16),
           const Divider(height: 1),
@@ -1956,6 +1999,416 @@ class VideoWorkspace extends StatelessWidget {
             ],
           ),
         ),
+      ],
+    );
+  }
+
+  // --- Phase 5: Multi-Camera Quad-View 2x2 Grid Monitor ---
+  Widget _buildMultiCamQuadViewOverlay(BuildContext context) {
+    final mc = controller.multiCam;
+    final angles = mc.angles;
+
+    return Container(
+      color: Colors.black.withValues(alpha: 0.95),
+      padding: const EdgeInsets.all(4),
+      child: Column(
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(child: _buildQuadAngleCell(context, angles.isNotEmpty ? angles[0] : null, 0)),
+                const SizedBox(width: 4),
+                Expanded(child: _buildQuadAngleCell(context, angles.length > 1 ? angles[1] : null, 1)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(child: _buildQuadAngleCell(context, angles.length > 2 ? angles[2] : null, 2)),
+                const SizedBox(width: 4),
+                Expanded(child: _buildQuadAngleCell(context, angles.length > 3 ? angles[3] : null, 3)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuadAngleCell(BuildContext context, MultiCamAngleModel? angle, int index) {
+    if (angle == null) {
+      return Container(
+        decoration: BoxDecoration(
+          color: IrisTheme.surfaceDark,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: IrisTheme.border),
+        ),
+      );
+    }
+
+    final isLive = angle.id == controller.multiCam.activeAngleId;
+
+    return InkWell(
+      onTap: () => controller.switchMultiCamAngle(angle.id),
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF10141D),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: isLive ? IrisTheme.accentRed : IrisTheme.borderHighlight,
+            width: isLive ? 2.0 : 1.0,
+          ),
+        ),
+        padding: const EdgeInsets.all(8),
+        child: Stack(
+          children: [
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.videocam,
+                    size: 24,
+                    color: isLive ? IrisTheme.accentRed : IrisTheme.textMuted,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    angle.name,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: isLive ? Colors.white : IrisTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: IrisTheme.surfaceMid,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Text(
+                  'CAM ${index + 1}',
+                  style: const TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: IrisTheme.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isLive ? IrisTheme.accentRed : IrisTheme.surfaceMid,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Text(
+                  isLive ? 'ON AIR' : 'PREVIEW',
+                  style: TextStyle(
+                    fontSize: 8,
+                    fontWeight: FontWeight.w700,
+                    color: isLive ? Colors.white : IrisTheme.textMuted,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- Phase 5: Multi-Camera Live Switcher Inspector ---
+  Widget _buildMultiCamSwitcherSection(BuildContext context) {
+    final mc = controller.multiCam;
+    final activeAngle = mc.activeAngle;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Expanded(
+              child: Row(
+                children: [
+                  Icon(Icons.switch_video, size: 14, color: IrisTheme.primaryCyan),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'MULTI-CAM SWITCHER',
+                      style: TextStyle(
+                        color: IrisTheme.textMuted,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: IrisTheme.accentRed.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(3),
+                border: Border.all(color: IrisTheme.accentRed.withValues(alpha: 0.4)),
+              ),
+              child: Text(
+                'LIVE: ${activeAngle?.name ?? "CAM 1"}',
+                style: const TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  color: IrisTheme.accentRed,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: mc.angles.map((angle) {
+            final isLive = angle.id == mc.activeAngleId;
+            return ChoiceChip(
+              selected: isLive,
+              label: Text(
+                'CAM: ${angle.name}',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: isLive ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+              backgroundColor: IrisTheme.surfaceLight,
+              selectedColor: IrisTheme.accentRed.withValues(alpha: 0.35),
+              avatar: Icon(
+                Icons.fiber_manual_record,
+                size: 10,
+                color: isLive ? IrisTheme.accentRed : IrisTheme.textMuted,
+              ),
+              onSelected: (_) => controller.switchMultiCamAngle(angle.id),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Expanded(
+              child: Text(
+                'Quad-View 4-Up Monitor',
+                style: TextStyle(fontSize: 11, color: IrisTheme.textSecondary),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Switch(
+              value: mc.isQuadViewActive,
+              activeThumbColor: IrisTheme.primaryCyan,
+              onChanged: (val) => controller.toggleMultiCamQuadView(val),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // --- Phase 5: HDR Tone Mapping Inspector ---
+  Widget _buildHdrToneMappingSection(BuildContext context) {
+    final hdr = controller.hdrSettings;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Expanded(
+              child: Row(
+                children: [
+                  Icon(Icons.hdr_on, size: 16, color: IrisTheme.primaryCyan),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'HDR TONE MAPPING',
+                      style: TextStyle(
+                        color: IrisTheme.textMuted,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: hdr.isEnabled,
+              activeThumbColor: IrisTheme.primaryCyan,
+              onChanged: (val) => controller.updateHdrSettings(isEnabled: val),
+            ),
+          ],
+        ),
+        if (hdr.isEnabled) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Transfer Function (EOTF / OETF):',
+            style: TextStyle(fontSize: 10, color: IrisTheme.textSecondary),
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              'PQ (ST 2084)',
+              'HLG',
+              'Linear',
+            ].map((tf) {
+              final isSelected = hdr.transferFunction == tf;
+              return ChoiceChip(
+                selected: isSelected,
+                label: Text(tf, style: const TextStyle(fontSize: 10)),
+                backgroundColor: IrisTheme.surfaceLight,
+                selectedColor: IrisTheme.primaryCyan.withValues(alpha: 0.25),
+                onSelected: (_) => controller.updateHdrSettings(transferFunction: tf),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Tone Mapping Algorithm:',
+            style: TextStyle(fontSize: 10, color: IrisTheme.textSecondary),
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              'ACES Filmic',
+              'Reinhard Extended',
+              'Photographic Knee',
+            ].map((alg) {
+              final isSelected = hdr.algorithm == alg;
+              return ChoiceChip(
+                selected: isSelected,
+                label: Text(alg, style: const TextStyle(fontSize: 10)),
+                backgroundColor: IrisTheme.surfaceLight,
+                selectedColor: IrisTheme.primaryCyan.withValues(alpha: 0.25),
+                onSelected: (_) => controller.updateHdrSettings(algorithm: alg),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 8),
+          _buildInspectorSlider(
+            label: 'Exposure Bias',
+            value: hdr.exposureStops,
+            min: -4.0,
+            max: 4.0,
+            unit: ' EV',
+            onChanged: (val) => controller.updateHdrSettings(exposureStops: val),
+          ),
+          _buildInspectorSlider(
+            label: 'Target Peak Nits',
+            value: hdr.targetNits,
+            min: 50.0,
+            max: 2000.0,
+            unit: ' nits',
+            onChanged: (val) => controller.updateHdrSettings(targetNits: val),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'WebGPU WGSL / Rayon SIMD Dispatch Pipeline Active',
+            style: TextStyle(fontSize: 9, color: IrisTheme.textMuted),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // --- Phase 5: 3D Spatial Audio & Binaural Section ---
+  Widget _buildSpatialAudioSection(BuildContext context, ClipModel clip) {
+    final spatial = clip.spatialAudio;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Expanded(
+              child: Row(
+                children: [
+                  Icon(Icons.surround_sound, size: 16, color: IrisTheme.primaryCyan),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '3D SPATIAL AUDIO & BINAURAL',
+                      style: TextStyle(
+                        color: IrisTheme.textMuted,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: spatial.isEnabled,
+              activeThumbColor: IrisTheme.primaryCyan,
+              onChanged: (val) => controller.toggleClipSpatialAudio(val),
+            ),
+          ],
+        ),
+        if (spatial.isEnabled) ...[
+          const SizedBox(height: 8),
+          _buildInspectorSlider(
+            label: 'Azimuth (Horizontal)',
+            value: spatial.azimuthDeg,
+            min: -180.0,
+            max: 180.0,
+            unit: '°',
+            onChanged: (val) => controller.updateClipSpatialAudio(azimuthDeg: val),
+          ),
+          _buildInspectorSlider(
+            label: 'Elevation (Vertical)',
+            value: spatial.elevationDeg,
+            min: -90.0,
+            max: 90.0,
+            unit: '°',
+            onChanged: (val) => controller.updateClipSpatialAudio(elevationDeg: val),
+          ),
+          _buildInspectorSlider(
+            label: 'Distance',
+            value: spatial.distanceMeters,
+            min: 0.1,
+            max: 10.0,
+            unit: ' m',
+            onChanged: (val) => controller.updateClipSpatialAudio(distanceMeters: val),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Spherical Head HRTF (Woodworth ITD + Shadow ILD Filter)',
+            style: TextStyle(fontSize: 9, color: IrisTheme.textMuted),
+          ),
+        ],
       ],
     );
   }

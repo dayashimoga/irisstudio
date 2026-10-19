@@ -64,6 +64,34 @@ class ChromaKeyModel {
   }
 }
 
+class SpatialAudioModel {
+  bool isEnabled;
+  double azimuthDeg;
+  double elevationDeg;
+  double distanceMeters;
+
+  SpatialAudioModel({
+    this.isEnabled = false,
+    this.azimuthDeg = 0.0,
+    this.elevationDeg = 0.0,
+    this.distanceMeters = 1.5,
+  });
+
+  SpatialAudioModel copyWith({
+    bool? isEnabled,
+    double? azimuthDeg,
+    double? elevationDeg,
+    double? distanceMeters,
+  }) {
+    return SpatialAudioModel(
+      isEnabled: isEnabled ?? this.isEnabled,
+      azimuthDeg: azimuthDeg ?? this.azimuthDeg,
+      elevationDeg: elevationDeg ?? this.elevationDeg,
+      distanceMeters: distanceMeters ?? this.distanceMeters,
+    );
+  }
+}
+
 class ClipModel {
   final String id;
   final String assetId;
@@ -77,6 +105,7 @@ class ClipModel {
   double volume;
   bool preservePitch;
   ChromaKeyModel chromaKey;
+  SpatialAudioModel spatialAudio;
 
   ClipModel({
     required this.id,
@@ -91,7 +120,9 @@ class ClipModel {
     this.volume = 1.0,
     this.preservePitch = true,
     ChromaKeyModel? chromaKey,
-  }) : chromaKey = chromaKey ?? ChromaKeyModel();
+    SpatialAudioModel? spatialAudio,
+  })  : chromaKey = chromaKey ?? ChromaKeyModel(),
+        spatialAudio = spatialAudio ?? SpatialAudioModel();
 
   ClipModel copyWith({
     String? id,
@@ -106,6 +137,7 @@ class ClipModel {
     double? volume,
     bool? preservePitch,
     ChromaKeyModel? chromaKey,
+    SpatialAudioModel? spatialAudio,
   }) {
     return ClipModel(
       id: id ?? this.id,
@@ -120,6 +152,7 @@ class ClipModel {
       volume: volume ?? this.volume,
       preservePitch: preservePitch ?? this.preservePitch,
       chromaKey: chromaKey ?? this.chromaKey.copyWith(),
+      spatialAudio: spatialAudio ?? this.spatialAudio.copyWith(),
     );
   }
 }
@@ -318,6 +351,61 @@ class HardwareAccelerationInfo {
   );
 }
 
+class MultiCamAngleModel {
+  final String id;
+  final String name;
+  final String assetId;
+  final double syncOffset;
+  final String colorLabel;
+
+  const MultiCamAngleModel({
+    required this.id,
+    required this.name,
+    required this.assetId,
+    this.syncOffset = 0.0,
+    this.colorLabel = '#00D1FF',
+  });
+}
+
+class MultiCamGroupModel {
+  final String id;
+  final String name;
+  final List<MultiCamAngleModel> angles;
+  String activeAngleId;
+  bool isQuadViewActive;
+
+  MultiCamGroupModel({
+    required this.id,
+    required this.name,
+    required this.angles,
+    required this.activeAngleId,
+    this.isQuadViewActive = false,
+  });
+
+  MultiCamAngleModel? get activeAngle {
+    for (final a in angles) {
+      if (a.id == activeAngleId) return a;
+    }
+    return angles.isNotEmpty ? angles.first : null;
+  }
+}
+
+class HdrToneMapModel {
+  bool isEnabled;
+  String transferFunction; // 'PQ (ST 2084)', 'HLG', 'Linear'
+  String algorithm; // 'ACES Filmic', 'Reinhard Extended', 'Photographic Knee'
+  double exposureStops;
+  double targetNits;
+
+  HdrToneMapModel({
+    this.isEnabled = false,
+    this.transferFunction = 'PQ (ST 2084)',
+    this.algorithm = 'ACES Filmic',
+    this.exposureStops = 0.0,
+    this.targetNits = 100.0,
+  });
+}
+
 class ProjectModel {
   final String id;
   String name;
@@ -328,6 +416,8 @@ class ProjectModel {
   final List<TransitionModel> transitions;
   final List<SubtitleItemModel> subtitles;
   final List<MotionTitleModel> motionTitles;
+  MultiCamGroupModel multiCamGroup;
+  HdrToneMapModel hdrSettings;
   HardwareAccelerationInfo hardwareInfo;
   AudioEqModel eq;
   AudioCompressorModel compressor;
@@ -348,6 +438,8 @@ class ProjectModel {
     List<TransitionModel>? transitions,
     List<SubtitleItemModel>? subtitles,
     List<MotionTitleModel>? motionTitles,
+    MultiCamGroupModel? multiCamGroup,
+    HdrToneMapModel? hdrSettings,
     HardwareAccelerationInfo? hardwareInfo,
     AudioEqModel? eq,
     AudioCompressorModel? compressor,
@@ -360,6 +452,19 @@ class ProjectModel {
   })  : transitions = transitions ?? [],
         subtitles = subtitles ?? [],
         motionTitles = motionTitles ?? [],
+        multiCamGroup = multiCamGroup ??
+            MultiCamGroupModel(
+              id: 'mc_default',
+              name: 'Live Multicam Stage',
+              angles: const [
+                MultiCamAngleModel(id: 'cam_1', name: 'WIDE', assetId: 'cam_wide'),
+                MultiCamAngleModel(id: 'cam_2', name: 'CLOSE-UP', assetId: 'cam_close'),
+                MultiCamAngleModel(id: 'cam_3', name: 'DRONE', assetId: 'cam_drone'),
+                MultiCamAngleModel(id: 'cam_4', name: 'STAGE', assetId: 'cam_stage'),
+              ],
+              activeAngleId: 'cam_1',
+            ),
+        hdrSettings = hdrSettings ?? HdrToneMapModel(),
         hardwareInfo = hardwareInfo ?? HardwareAccelerationInfo.defaultDetected,
         eq = eq ?? AudioEqModel(),
         compressor = compressor ?? AudioCompressorModel(),

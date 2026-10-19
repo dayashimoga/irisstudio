@@ -73,11 +73,35 @@
   - [x] Clip Inspector: Chroma Keying toggle, Green/Blue presets, Similarity, Smoothness, and Despill sliders, and Sub-pixel NCC Motion Tracking inspector.
 - [x] Comprehensive test suites (`tests/motion_and_keying_test.rs`, `apps/flutter/test/video_workspace_test.dart`) and verified quality gates (38 Rust tests pass, zero Clippy warnings, 100% clean formatting, zero Flutter analysis warnings, 3/3 Flutter test suites pass).
 
-## Phase 5: Multi-Camera Switching & Spatial Audio (Next Phase)
-- [ ] Multi-camera synchronized angle ingest and real-time live angle switching engine.
-- [ ] Ambisonic B-format and binaural 3D spatial audio panner.
-- [ ] HDR (High Dynamic Range) tone mapping: PQ (ST 2084) and HLG transfer functions.
-- [ ] GPU-accelerated compute shaders (WGSL / WGPU) for real-time 4K/60fps playback.
+## Phase 5: Multi-Camera Switching & Spatial Audio (Completed & Verified)
+- [x] Multi-camera synchronized angle ingest and real-time live angle switching engine (`crates/timeline/src/multicam.rs`):
+  - [x] `CameraAngle` models with per-angle sync offsets, color tags, and source asset linkage.
+  - [x] `MultiCamClip` supporting live angle switching, angle cuts recording at timeline playhead, and non-destructive `flatten_to_clips()` export into standard timeline clips.
+- [x] Ambisonic B-format & Binaural 3D Spatial Audio Panner (`crates/audio/src/spatial.rs`):
+  - [x] First-Order Ambisonics ($W, X, Y, Z$) B-format encoding for omnidirectional and directional audio pressure fields.
+  - [x] `BinauralPanner` with spherical head HRTF model based on Woodworth head diffraction ($r = 0.0875\text{m}$, $c = 343\text{m/s}$) for accurate Interaural Time Difference (ITD) and head acoustic shadow filtering for Interaural Level Difference (ILD).
+  - [x] ITU-R BS.775 5.1 surround downmixing matrix into stereo pair.
+- [x] HDR (High Dynamic Range) Tone Mapping & Transfer Functions (`crates/effects/src/hdr.rs`):
+  - [x] SMPTE ST 2084 PQ (Perceptual Quantizer) EOTF ($0 \to 10000$ nits) and inverse EOTF.
+  - [x] ARIB STD-B67 HLG (Hybrid Log-Gamma) inverse OETF and display EOTF.
+  - [x] Industry-standard tone mapping curves: ACES filmic S-curve, Extended Reinhard (with adjustable white point), and photographic knee clamp with parallel Rayon execution.
+- [x] GPU-Accelerated Compute Pipeline (`crates/render/src/gpu_pipeline.rs`, `crates/render/src/multicam_view.rs`):
+  - [x] Embedded WGSL compute shaders (`WGSL_COMPUTE_TONEMAP`, `WGSL_COMPUTE_COMPOSITE`, `WGSL_COMPUTE_TETRAHEDRAL_LUT`) for real-time GPU dispatch with multi-threaded parallel fallback.
+  - [x] Broadcast 2x2 Quad-View Monitor renderer (`render_multicam_grid`) displaying 4 synchronized angle viewports with on-air status pills and active border highlights.
+- [x] FFI C-ABI Layer additions (`crates/ffi/src/api.rs`):
+  - [x] Exported `iris_spatial_audio_pan_binaural`, `iris_hdr_tonemap_frame`, `iris_gpu_compute_dispatch_tonemap`, and `iris_multicam_render_quad`.
+- [x] Flutter Adaptive UI integration (`apps/flutter/`):
+  - [x] Video Scopes bar: `Quad View` toggle filter chip.
+  - [x] Viewport Canvas: Interactive 2x2 Quad-View Grid Monitor overlay with live ON AIR pills, angle labels, and direct tap-to-switch angles.
+  - [x] Master Inspector: Multi-Cam Switcher card with angle selection chips, and HDR Tone Mapping card with PQ/HLG transfer functions, ACES/Reinhard algorithm chips, and EV/Nits sliders.
+  - [x] Clip Inspector: 3D Spatial Audio & Binaural Panning section with Azimuth, Elevation, Distance sliders, and Woodworth HRTF indicator.
+- [x] Comprehensive test suites (`tests/multicam_and_spatial_audio_test.rs`, `apps/flutter/test/video_workspace_test.dart`) and verified quality gates (43 Rust tests pass, zero Clippy warnings, 100% clean formatting, zero Flutter analysis warnings, 3/3 Flutter test suites pass).
+
+## Phase 6: Optical Flow, Neural Tools & Final Release Polish (Next Phase)
+- [ ] Optical Flow frame interpolation and slow-motion synthesis (bidirectional block matching & forward-backward consistency check).
+- [ ] AI-assisted smart edge-detection rotoscoping and background segmentation mask.
+- [ ] Production packaging, platform installers, code signing scripts, and user manual documentation.
+
 
 
 

@@ -1,16 +1,17 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 use iris_audio::{
-    generate_waveform_peaks, AudioCompressor, AudioDucker, DuckingParameters, EqualizerBand,
-    ThreeBandEq, WaveformPeak, WsolaTimeStretch,
+    generate_waveform_peaks, AudioCompressor, AudioDucker, BinauralPanner, DuckingParameters,
+    EqualizerBand, ThreeBandEq, WaveformPeak, WsolaTimeStretch,
 };
 use iris_cache::{CacheManager, MemoryBudgetTier};
 use iris_core::{Dimensions, PixelFormat, Point, RationalTime, Rect};
 use iris_effects::{
     apply_adjustments, apply_brush_stroke, apply_chroma_key, apply_clone_stamp, apply_denoise,
-    apply_gaussian_blur, apply_heal_brush, apply_levels, apply_red_eye_removal, apply_unsharp_mask,
-    apply_vignette, AdjustmentParameters, ChromaKeyParams, LevelsParameters, Lut3D, LutPreset,
-    MotionTracker, RgbCurves, SplinePoint,
+    apply_gaussian_blur, apply_hdr_tonemap, apply_heal_brush, apply_levels, apply_red_eye_removal,
+    apply_unsharp_mask, apply_vignette, AdjustmentParameters, ChromaKeyParams, HdrToneMapParams,
+    HdrTransferFunction, LevelsParameters, Lut3D, LutPreset, MotionTracker, RgbCurves, SplinePoint,
+    ToneMappingAlgorithm,
 };
 use iris_export::{
     validate_exported_media, BatchPhotoProcessor, BatchPhotoTask, ExportPreset, StreamCopyOptimizer,
@@ -23,8 +24,9 @@ use iris_images::{
 use iris_media::{HardwareBackendKind, HardwareDeviceContext, VideoFrame};
 use iris_projects::{CrashJournal, Project, UndoRedoManager};
 use iris_render::{
-    render_motion_title, render_rgb_parade, render_vectorscope, render_waveform,
-    MockSourceResolver, PreviewEngine, TitleTemplate,
+    render_motion_title, render_multicam_grid, render_rgb_parade, render_vectorscope,
+    render_waveform, GpuComputePipeline, MockSourceResolver, MultiCamAngleView, PreviewEngine,
+    TitleTemplate,
 };
 use iris_timeline::{
     Clip, RippleDeleteCommand, SplitClipCommand, SubtitleItem, SubtitleTrack, Track, TrackKind,
@@ -1535,5 +1537,166 @@ pub extern "C" fn iris_render_motion_title(
     render_motion_title(&mut frame, title_str, sub_str, template, progress);
 
     slice.copy_from_slice(&frame.data);
+    0
+}
+
+// =========================================================================
+// Phase 5: Multi-Camera Switching, Spatial Audio, HDR & GPU Compute Pipeline
+// =========================================================================
+
+#[no_mangle]
+pub extern "C" fn iris_spatial_audio_pan_binaural(
+    mono_samples: *const f32,
+    stereo_out: *mut f32,
+    sample_count: usize,
+    sample_rate: c_int,
+    azimuth_deg: f32,
+    elevation_deg: f32,
+    distance_meters: f32,
+) -> c_int {
+    if mono_samples.is_null() || stereo_out.is_null() || sample_count == 0 {
+        return -1;
+    }
+    let sr = sample_rate.max(8000) as u32;
+    let mut panner = BinauralPanner::new(sr);
+    let mono_slice = unsafe { slice::from_raw_parts(mono_samples, sample_count) };
+    let stereo_slice = unsafe { slice::from_raw_parts_mut(stereo_out, sample_count * 2) };
+
+    panner.process_mono_to_binaural(
+        mono_slice,
+        stereo_slice,
+        azimuth_deg,
+        elevation_deg,
+        distance_meters,
+    );
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_hdr_tonemap_frame(
+    pixels: *mut u8,
+    len: usize,
+    transfer_fn: c_int, // 0 = PQ, 1 = HLG, 2 = Linear
+    algorithm: c_int,   // 0 = ACES Filmic, 1 = Reinhard, 2 = Knee
+    exposure_stops: f32,
+    target_nits: f32,
+    white_point: f32,
+) -> c_int {
+    if pixels.is_null() || len == 0 || !len.is_multiple_of(4) {
+        return -1;
+    }
+    let slice = unsafe { slice::from_raw_parts_mut(pixels, len) };
+
+    let tf = match transfer_fn {
+        0 => HdrTransferFunction::Pq,
+        1 => HdrTransferFunction::Hlg,
+        _ => HdrTransferFunction::Linear,
+    };
+    let algo = match algorithm {
+        0 => ToneMappingAlgorithm::AcesFilmic,
+        1 => ToneMappingAlgorithm::ReinhardExtended,
+        _ => ToneMappingAlgorithm::PhotographicKnee,
+    };
+
+    let params = HdrToneMapParams {
+        transfer_function: tf,
+        algorithm: algo,
+        exposure_stops,
+        target_nits,
+        white_point,
+    };
+
+    apply_hdr_tonemap(slice, &params);
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_gpu_compute_dispatch_tonemap(
+    in_pixels: *const u8,
+    out_pixels: *mut u8,
+    len: usize,
+    exposure_stops: f32,
+) -> c_int {
+    if in_pixels.is_null() || out_pixels.is_null() || len == 0 || !len.is_multiple_of(4) {
+        return -1;
+    }
+    let in_slice = unsafe { slice::from_raw_parts(in_pixels, len) };
+    let out_slice = unsafe { slice::from_raw_parts_mut(out_pixels, len) };
+
+    let pipeline = GpuComputePipeline::new();
+    pipeline.dispatch_tonemap(in_slice, out_slice, exposure_stops);
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_multicam_render_quad(
+    in_pixels_1: *const u8,
+    in_pixels_2: *const u8,
+    in_pixels_3: *const u8,
+    in_pixels_4: *const u8,
+    in_w: u32,
+    in_h: u32,
+    active_angle_idx: c_int,
+    out_pixels: *mut u8,
+    out_w: u32,
+    out_h: u32,
+) -> c_int {
+    if out_pixels.is_null() || out_w == 0 || out_h == 0 || in_w == 0 || in_h == 0 {
+        return -1;
+    }
+
+    let in_len = (in_w * in_h * 4) as usize;
+    let make_frame = |ptr: *const u8| -> VideoFrame {
+        if ptr.is_null() {
+            VideoFrame::new(
+                Dimensions::new(in_w, in_h),
+                PixelFormat::Rgba8,
+                RationalTime::ZERO,
+                RationalTime::new(1, 30),
+            )
+        } else {
+            let slice = unsafe { slice::from_raw_parts(ptr, in_len) };
+            VideoFrame::from_raw(
+                Dimensions::new(in_w, in_h),
+                PixelFormat::Rgba8,
+                RationalTime::ZERO,
+                RationalTime::new(1, 30),
+                slice.to_vec(),
+            )
+        }
+    };
+
+    let f1 = make_frame(in_pixels_1);
+    let f2 = make_frame(in_pixels_2);
+    let f3 = make_frame(in_pixels_3);
+    let f4 = make_frame(in_pixels_4);
+
+    let angle_views = [
+        MultiCamAngleView {
+            frame: &f1,
+            name: "WIDE",
+            is_active: active_angle_idx == 0,
+        },
+        MultiCamAngleView {
+            frame: &f2,
+            name: "CLOSE-UP",
+            is_active: active_angle_idx == 1,
+        },
+        MultiCamAngleView {
+            frame: &f3,
+            name: "DRONE",
+            is_active: active_angle_idx == 2,
+        },
+        MultiCamAngleView {
+            frame: &f4,
+            name: "STAGE",
+            is_active: active_angle_idx == 3,
+        },
+    ];
+
+    let quad_frame = render_multicam_grid(&angle_views, out_w, out_h);
+    let out_len = (out_w * out_h * 4) as usize;
+    let out_slice = unsafe { slice::from_raw_parts_mut(out_pixels, out_len) };
+    out_slice.copy_from_slice(&quad_frame.data);
     0
 }

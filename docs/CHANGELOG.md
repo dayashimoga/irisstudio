@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - Phase 5: Multi-Camera Switching, Spatial Audio & HDR Tone Mapping (2026-10-19)
+
+### Added
+- Multi-Camera Angle Switching & Sync Engine (`crates/timeline/src/multicam.rs`):
+  - `CameraAngle` models supporting arbitrary camera setups with individual timecode sync offsets and broadcast color tags.
+  - `AngleCut` sequence tracker recording live cut decisions at playhead timestamp.
+  - `MultiCamClip` with real-time active angle evaluation during playback and non-destructive `flatten_to_clips()` export into standard multitrack timeline clips.
+- Broadcast 2x2 Quad-View Monitor Display (`crates/render/src/multicam_view.rs`):
+  - `render_multicam_grid()` producing a 2x2 split-screen composite with real-time camera labels (`CAM 1`, `CAM 2`, `CAM 3`, `CAM 4`), ON AIR pills, and active camera angle border highlights.
+- First-Order Ambisonics ($W, X, Y, Z$) & 3D Spatial Audio Panner (`crates/audio/src/spatial.rs`):
+  - Full B-format frame encoding with omnidirectional pressure ($W$) and directional pressure gradients ($X, Y, Z$).
+  - `BinauralPanner` with spherical head HRTF implementation using Woodworth diffraction equation ($r = 0.0875\text{m}$, $c = 343\text{m/s}$) for accurate Interaural Time Difference (ITD).
+  - Head acoustic shadow low-pass filtering simulating pinna and head obstruction for realistic Interaural Level Difference (ILD).
+  - ITU-R BS.775 5.1 surround-sound matrix downmixing into stereo headphone and monitor pairs.
+- High Dynamic Range (HDR) Tone Mapping Engine (`crates/effects/src/hdr.rs`):
+  - SMPTE ST 2084 PQ (Perceptual Quantizer) Electro-Optical Transfer Function (EOTF) scaling from 0 to 10,000 nits and inverse EOTF.
+  - ARIB STD-B67 Hybrid Log-Gamma (HLG) inverse Opto-Electronic Transfer Function (OETF) and display EOTF with scene luminance compensation.
+  - Industry-standard tone mapping curves: ACES filmic S-curve, Extended Reinhard (with configurable white point), and photographic knee clamp with parallel Rayon execution.
+- WebGPU Shading Language (WGSL) Compute Pipeline (`crates/render/src/gpu_pipeline.rs`):
+  - Embedded compute shaders (`WGSL_COMPUTE_TONEMAP`, `WGSL_COMPUTE_COMPOSITE`, `WGSL_COMPUTE_TETRAHEDRAL_LUT`) for hardware GPU dispatch with parallel SIMD fallback.
+- FFI C-ABI Layer Extensions (`crates/ffi/src/api.rs`):
+  - Exported `iris_spatial_audio_pan_binaural`, `iris_hdr_tonemap_frame`, `iris_gpu_compute_dispatch_tonemap`, and `iris_multicam_render_quad`. Rebuilt release DLL for Windows runners.
+- Flutter Adaptive UI Integration (`apps/flutter/lib/`):
+  - Top Player Scopes Bar: `Quad View` toggle filter chip.
+  - Viewport Preview Stack: Interactive 2x2 Multi-Camera Quad-View Grid Monitor overlay with live ON AIR pills, angle labels, and direct tap-to-switch angles.
+  - Master Inspector: Multi-Cam Switcher card with angle selection chips, and HDR Tone Mapping card with PQ/HLG transfer functions, ACES/Reinhard algorithm chips, and EV/Nits sliders.
+  - Clip Inspector: 3D Spatial Audio & Binaural Panning section with Azimuth, Elevation, Distance sliders, and Woodworth HRTF indicator.
+- Quality Gates & Testing:
+  - Integration test suite `tests/multicam_and_spatial_audio_test.rs` covering multi-cam cuts/flattening, quad-view grid, ambisonics/binaural panning, HDR PQ/HLG/ACES tone mapping, and GPU compute pipeline.
+  - Comprehensive Flutter widget tests in `apps/flutter/test/video_workspace_test.dart` asserting Quad View toggle, multicam switching, spatial audio controls, and HDR tone mapping.
+  - 100% test pass (43 Rust tests, 3/3 Flutter test suites), zero Clippy warnings, 100% clean formatting, zero Flutter analysis warnings, and verified benchmarks.
+
 ## [0.5.0] - Phase 4: Motion Graphics, Keying & Hardware Acceleration (2026-10-19)
 
 ### Added

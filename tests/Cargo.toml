@@ -57,4 +57,8 @@ path = "color_grading_test.rs"
 name = "motion_and_keying_test"
 path = "motion_and_keying_test.rs"
 
+[[test]]
+name = "multicam_and_spatial_audio_test"
+path = "multicam_and_spatial_audio_test.rs"
+
 

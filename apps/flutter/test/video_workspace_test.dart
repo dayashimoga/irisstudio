@@ -99,6 +99,67 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('CINEMATIC'), findsAtLeastNWidgets(1));
 
+    // Phase 5: Verify Multi-Camera Switcher in Master Inspector
+    await tester.ensureVisible(find.text('MULTI-CAM SWITCHER'));
+    expect(find.text('MULTI-CAM SWITCHER'), findsOneWidget);
+    expect(find.text('CAM: WIDE'), findsOneWidget);
+    expect(find.text('CAM: CLOSE-UP'), findsOneWidget);
+    expect(find.text('CAM: DRONE'), findsOneWidget);
+    expect(find.text('CAM: STAGE'), findsOneWidget);
+
+    // Switch angle to CLOSE-UP
+    await tester.tap(find.text('CAM: CLOSE-UP'));
+    await tester.pumpAndSettle();
+    expect(controller.multiCam.activeAngleId, 'cam_2');
+    expect(find.text('LIVE: CLOSE-UP'), findsOneWidget);
+
+    // Phase 5: Verify Quad View 4-Up Monitor toggle in Scopes bar and Viewport
+    expect(find.text('Quad View'), findsOneWidget);
+    await tester.tap(find.text('Quad View'));
+    await tester.pumpAndSettle();
+    expect(controller.multiCam.isQuadViewActive, isTrue);
+
+    // Verify 4-up quad monitor rendering
+    expect(find.text('CAM 1'), findsOneWidget);
+    expect(find.text('CAM 2'), findsOneWidget);
+    expect(find.text('CAM 3'), findsOneWidget);
+    expect(find.text('CAM 4'), findsOneWidget);
+    expect(find.text('ON AIR'), findsOneWidget);
+    expect(find.text('PREVIEW'), findsNWidgets(3));
+
+    // Tap CAM 3 in quad view or switcher
+    await tester.tap(find.text('CAM 3'));
+    await tester.pumpAndSettle();
+    expect(controller.multiCam.activeAngleId, 'cam_3');
+
+    // Turn off Quad View
+    controller.toggleMultiCamQuadView(false);
+    await tester.pumpAndSettle();
+    expect(controller.multiCam.isQuadViewActive, isFalse);
+
+    // Phase 5: Verify HDR Tone Mapping Card in Master Inspector
+    await tester.ensureVisible(find.text('HDR TONE MAPPING'));
+    expect(find.text('HDR TONE MAPPING'), findsOneWidget);
+
+    controller.updateHdrSettings(isEnabled: true);
+    await tester.pumpAndSettle();
+    expect(controller.hdrSettings.isEnabled, isTrue);
+    expect(find.text('Transfer Function (EOTF / OETF):'), findsOneWidget);
+    expect(find.text('PQ (ST 2084)'), findsOneWidget);
+    expect(find.text('HLG'), findsOneWidget);
+    expect(find.text('ACES Filmic'), findsOneWidget);
+    expect(find.text('Reinhard Extended'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('HLG'));
+    await tester.tap(find.text('HLG'));
+    await tester.pumpAndSettle();
+    expect(controller.hdrSettings.transferFunction, 'HLG');
+
+    await tester.ensureVisible(find.text('Reinhard Extended'));
+    await tester.tap(find.text('Reinhard Extended'));
+    await tester.pumpAndSettle();
+    expect(controller.hdrSettings.algorithm, 'Reinhard Extended');
+
     // 5. Select a clip on the timeline
     final clipText = find.text('Golden Hour Intro.mp4');
     expect(clipText, findsOneWidget);
@@ -110,6 +171,29 @@ void main() {
     expect(find.text('SPATIAL TRANSFORM'), findsOneWidget);
     expect(find.text('PLAYBACK SPEED & TIMING'), findsOneWidget);
     expect(find.text('Preserve Pitch (WSOLA)'), findsOneWidget);
+
+    // Phase 5: Verify 3D Spatial Audio & Binaural Section in Clip Inspector
+    await tester.ensureVisible(find.text('3D SPATIAL AUDIO & BINAURAL'));
+    expect(find.text('3D SPATIAL AUDIO & BINAURAL'), findsOneWidget);
+
+    controller.toggleClipSpatialAudio(true);
+    await tester.pumpAndSettle();
+    expect(controller.selectedClip?.spatialAudio.isEnabled, isTrue);
+    expect(find.text('Azimuth (Horizontal)'), findsOneWidget);
+    expect(find.text('Elevation (Vertical)'), findsOneWidget);
+    expect(find.text('Distance'), findsOneWidget);
+    expect(find.textContaining('Woodworth ITD'), findsOneWidget);
+
+    controller.updateClipSpatialAudio(
+      azimuthDeg: 45.0,
+      elevationDeg: 15.0,
+      distanceMeters: 2.5,
+    );
+    await tester.pumpAndSettle();
+    expect(controller.selectedClip?.spatialAudio.azimuthDeg, 45.0);
+    expect(controller.selectedClip?.spatialAudio.elevationDeg, 15.0);
+    expect(controller.selectedClip?.spatialAudio.distanceMeters, 2.5);
+
     expect(find.text('KEYFRAME EASING CURVE'), findsOneWidget);
     expect(find.text('TRANSITIONS (EXTENDED PRESETS)'), findsOneWidget);
 
@@ -153,3 +237,4 @@ void main() {
     expect(find.text('PROJECT MASTER & DYNAMICS'), findsOneWidget);
   });
 }
+
