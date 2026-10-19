@@ -1,0 +1,42 @@
+[package]
+name = "iris_tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+iris_core = { path = "../crates/core" }
+iris_media = { path = "../crates/media" }
+iris_images = { path = "../crates/images" }
+iris_timeline = { path = "../crates/timeline" }
+iris_effects = { path = "../crates/effects" }
+iris_render = { path = "../crates/render" }
+iris_audio = { path = "../crates/audio" }
+iris_projects = { path = "../crates/projects" }
+iris_cache = { path = "../crates/cache" }
+iris_export = { path = "../crates/export" }
+iris_ffi = { path = "../crates/ffi" }
+
+[[test]]
+name = "timeline_test"
+path = "timeline_test.rs"
+
+[[test]]
+name = "effects_test"
+path = "effects_test.rs"
+
+[[test]]
+name = "photo_pipeline_test"
+path = "photo_pipeline_test.rs"
+
+[[test]]
+name = "crash_recovery_test"
+path = "crash_recovery_test.rs"
+
+[[test]]
+name = "audio_test"
+path = "audio_test.rs"
+
+[[test]]
+name = "export_test"
+path = "export_test.rs"

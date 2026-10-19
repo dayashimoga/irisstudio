@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/media",
+    "crates/images",
+    "crates/timeline",
+    "crates/effects",
+    "crates/render",
+    "crates/audio",
+    "crates/projects",
+    "crates/cache",
+    "crates/export",
+    "crates/ffi",
+    "tests",
+    "benchmarks",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Iris Studio Engineering"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/iris-studio/iris-studio"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+rayon = "1.10"
+thiserror = "1.0"
+log = "0.4"

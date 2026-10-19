@@ -1,0 +1,14 @@
+[package]
+name = "iris_export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+iris_core = { path = "../core" }
+iris_render = { path = "../render" }
+iris_timeline = { path = "../timeline" }
+iris_images = { path = "../images" }
+iris_audio = { path = "../audio" }
+serde = { workspace = true }
+thiserror = { workspace = true }

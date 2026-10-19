@@ -1,0 +1,17 @@
+[package]
+name = "iris_benchmarks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+iris_core = { path = "../crates/core" }
+iris_effects = { path = "../crates/effects" }
+iris_images = { path = "../crates/images" }
+iris_render = { path = "../crates/render" }
+iris_timeline = { path = "../crates/timeline" }
+iris_audio = { path = "../crates/audio" }
+
+[[bin]]
+name = "run_benchmarks"
+path = "src/main.rs"

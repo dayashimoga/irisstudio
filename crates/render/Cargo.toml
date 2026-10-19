@@ -1,0 +1,16 @@
+[package]
+name = "iris_render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+iris_core = { path = "../core" }
+iris_timeline = { path = "../timeline" }
+iris_effects = { path = "../effects" }
+iris_media = { path = "../media" }
+iris_images = { path = "../images" }
+iris_cache = { path = "../cache" }
+rayon = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }

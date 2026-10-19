@@ -1,0 +1,64 @@
+name: Iris Studio Continuous Integration & Verification
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rust-verify:
+    name: Rust Quality Gates (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Verify Formatting (cargo fmt)
+        run: cargo fmt --all -- --check
+
+      - name: Verify Clippy Zero Warnings (cargo clippy)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Execute Full Test Suite (cargo test)
+        run: cargo test --workspace --verbose
+
+      - name: Run Performance Benchmarks
+        run: cargo run --release --bin run_benchmarks
+
+  flutter-verify:
+    name: Flutter Adaptive UI Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+
+      - name: Install Dependencies
+        working-directory: apps/flutter
+        run: flutter pub get
+
+      - name: Flutter Static Analysis
+        working-directory: apps/flutter
+        run: flutter analyze --no-fatal-infos
+
+      - name: Flutter Widget & Integration Tests
+        working-directory: apps/flutter
+        run: flutter test --verbose

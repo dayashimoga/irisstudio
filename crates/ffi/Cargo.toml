@@ -1,0 +1,23 @@
+[package]
+name = "iris_ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+iris_core = { path = "../core" }
+iris_media = { path = "../media" }
+iris_images = { path = "../images" }
+iris_timeline = { path = "../timeline" }
+iris_effects = { path = "../effects" }
+iris_render = { path = "../render" }
+iris_audio = { path = "../audio" }
+iris_projects = { path = "../projects" }
+iris_cache = { path = "../cache" }
+iris_export = { path = "../export" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

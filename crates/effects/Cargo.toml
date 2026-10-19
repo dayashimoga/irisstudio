@@ -1,0 +1,11 @@
+[package]
+name = "iris_effects"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+iris_core = { path = "../core" }
+rayon = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
