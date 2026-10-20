@@ -18,7 +18,7 @@ pub fn render_waveform(source: &VideoFrame, width: u32, height: u32) -> VideoFra
 
     // Initialize with dark slate scope background
     let bg = [15u8, 18, 26, 255];
-    for chunk in out_frame.data.chunks_exact_mut(4) {
+    for chunk in out_frame.data.as_chunks_mut::<4>().0 {
         chunk.copy_from_slice(&bg);
     }
 
@@ -112,7 +112,7 @@ pub fn render_vectorscope(source: &VideoFrame, size: u32) -> VideoFrame {
 
     // Dark circular background
     let bg = [15u8, 18, 26, 255];
-    for chunk in out_frame.data.chunks_exact_mut(4) {
+    for chunk in out_frame.data.as_chunks_mut::<4>().0 {
         chunk.copy_from_slice(&bg);
     }
 
@@ -236,7 +236,7 @@ pub fn render_rgb_parade(source: &VideoFrame, width: u32, height: u32) -> VideoF
 
     // Dark slate background
     let bg = [15u8, 18, 26, 255];
-    for chunk in out_frame.data.chunks_exact_mut(4) {
+    for chunk in out_frame.data.as_chunks_mut::<4>().0 {
         chunk.copy_from_slice(&bg);
     }
 

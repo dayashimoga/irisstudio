@@ -51,9 +51,9 @@ impl AudioMixer {
         let mut sum_sq_r = 0.0f32;
         let pairs = stereo_samples.len() / 2;
 
-        for chunk in stereo_samples.chunks_exact(2) {
-            let l = chunk[0].abs();
-            let r = chunk[1].abs();
+        for &[l_raw, r_raw] in stereo_samples.as_chunks::<2>().0 {
+            let l = l_raw.abs();
+            let r = r_raw.abs();
 
             if l > peak_l {
                 peak_l = l;

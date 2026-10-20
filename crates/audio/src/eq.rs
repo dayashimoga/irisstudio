@@ -161,7 +161,7 @@ impl ThreeBandEq {
         let mut high_state_l = BiquadState::default();
         let mut high_state_r = BiquadState::default();
 
-        for chunk in samples.chunks_exact_mut(2) {
+        for chunk in samples.as_chunks_mut::<2>().0 {
             let mut l = chunk[0];
             let mut r = chunk[1];
 
@@ -213,7 +213,7 @@ impl AudioCompressor {
 
         let mut envelope = 0.0f32;
 
-        for chunk in samples.chunks_exact_mut(2) {
+        for chunk in samples.as_chunks_mut::<2>().0 {
             let peak = chunk[0].abs().max(chunk[1].abs());
 
             if peak > envelope {

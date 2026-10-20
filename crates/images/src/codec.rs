@@ -48,7 +48,7 @@ pub fn encode_jpeg(img: &RgbaImage, quality: u8) -> IrisResult<Vec<u8>> {
 
     // Convert RGBA to RGB for JPEG
     let mut rgb_pixels = Vec::with_capacity((img.width * img.height * 3) as usize);
-    for chunk in img.pixels.chunks_exact(4) {
+    for chunk in img.pixels.as_chunks::<4>().0 {
         rgb_pixels.push(chunk[0]);
         rgb_pixels.push(chunk[1]);
         rgb_pixels.push(chunk[2]);

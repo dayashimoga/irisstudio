@@ -1,4 +1,4 @@
-name: Iris Studio Continuous Integration & Verification
+name: Iris Studio Continuous Integration & Multi-Platform Release
 
 on:
   push:
@@ -50,6 +50,7 @@ jobs:
         with:
           flutter-version: '3.24.x'
           channel: 'stable'
+          cache: true
 
       - name: Install Dependencies
         working-directory: apps/flutter
@@ -62,3 +63,198 @@ jobs:
       - name: Flutter Widget & Integration Tests
         working-directory: apps/flutter
         run: flutter test --verbose
+
+  build-windows:
+    name: Build & Package Windows Desktop App
+    needs: [rust-verify, flutter-verify]
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Compile Native Rust FFI Engine
+        run: cargo build --release -p iris_ffi
+
+      - name: Stage Native Libraries into Flutter Runner
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path apps/flutter/windows/runner -Force | Out-Null
+          Copy-Item target/release/iris_ffi.dll apps/flutter/ -Force
+          Copy-Item target/release/iris_ffi.dll apps/flutter/windows/runner/ -Force
+
+      - name: Build Flutter Windows Desktop
+        shell: powershell
+        run: |
+          cd apps/flutter
+          flutter config --enable-windows-desktop
+          flutter pub get
+          flutter build windows --release
+
+      - name: Package Windows Portable Release
+        shell: powershell
+        run: |
+          $dist = "dist/windows"
+          New-Item -ItemType Directory -Path $dist -Force | Out-Null
+          $releaseDir = "apps/flutter/build/windows/x64/runner/Release"
+          Copy-Item target/release/iris_ffi.dll $releaseDir/ -Force
+          Copy-Item LICENSE $releaseDir/ -Force
+          Copy-Item README.md $releaseDir/ -Force
+          Compress-Archive -Path "$releaseDir/*" -DestinationPath "$dist/IrisStudio-Windows-x64.zip" -Force
+
+      - name: Upload Windows Desktop Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: IrisStudio-Windows-x64
+          path: dist/windows/IrisStudio-Windows-x64.zip
+          retention-days: 14
+
+  build-linux:
+    name: Build & Package Linux Desktop App
+    needs: [rust-verify, flutter-verify]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Install Linux Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libgl1-mesa-dev
+
+      - name: Setup Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Compile Native Rust FFI Engine
+        run: cargo build --release -p iris_ffi
+
+      - name: Stage Native Libraries for Linux
+        run: |
+          mkdir -p apps/flutter/linux
+          cp target/release/libiris_ffi.so apps/flutter/ || true
+
+      - name: Build Flutter Linux Desktop
+        run: |
+          cd apps/flutter
+          flutter config --enable-linux-desktop
+          flutter pub get
+          flutter build linux --release
+
+      - name: Package Linux Desktop Release Bundle
+        run: |
+          mkdir -p dist/linux
+          BUNDLE_DIR="apps/flutter/build/linux/x64/release/bundle"
+          mkdir -p "$BUNDLE_DIR/lib"
+          cp target/release/libiris_ffi.so "$BUNDLE_DIR/lib/"
+          cp target/release/libiris_ffi.so "$BUNDLE_DIR/"
+          cp LICENSE README.md "$BUNDLE_DIR/"
+          tar -czvf dist/linux/IrisStudio-Linux-x64.tar.gz -C "$BUNDLE_DIR" .
+
+      - name: Upload Linux Desktop Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: IrisStudio-Linux-x64
+          path: dist/linux/IrisStudio-Linux-x64.tar.gz
+          retention-days: 14
+
+  build-macos:
+    name: Build & Package macOS Desktop App
+    needs: [rust-verify, flutter-verify]
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Compile Native Rust FFI Engine
+        run: cargo build --release -p iris_ffi
+
+      - name: Build Flutter macOS Desktop
+        run: |
+          cd apps/flutter
+          flutter config --enable-macos-desktop
+          flutter pub get
+          flutter build macos --release --no-codesign
+
+      - name: Package macOS App Bundle
+        run: |
+          mkdir -p dist/macos
+          APP_PATH="apps/flutter/build/macos/Build/Products/Release"
+          mkdir -p "$APP_PATH/iris_studio.app/Contents/Frameworks"
+          cp target/release/libiris_ffi.dylib "$APP_PATH/iris_studio.app/Contents/Frameworks/" || true
+          cd "$APP_PATH"
+          zip -r -y ../../../../../../dist/macos/IrisStudio-macOS-Universal.zip iris_studio.app
+
+      - name: Upload macOS Desktop Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: IrisStudio-macOS-Universal
+          path: dist/macos/IrisStudio-macOS-Universal.zip
+          retention-days: 14
+
+  build-android:
+    name: Build & Package Android APK
+    needs: [rust-verify, flutter-verify]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Set Permissions for Gradle Wrapper
+        run: chmod +x apps/flutter/android/gradlew
+
+      - name: Build Flutter Android Release APK
+        run: |
+          cd apps/flutter
+          flutter pub get
+          flutter build apk --release
+
+      - name: Stage Android Release Artifact
+        run: |
+          mkdir -p dist/android
+          cp apps/flutter/build/app/outputs/flutter-apk/app-release.apk dist/android/IrisStudio-Android-v1.0.0.apk
+
+      - name: Upload Android APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: IrisStudio-Android-APK
+          path: dist/android/IrisStudio-Android-v1.0.0.apk
+          retention-days: 14

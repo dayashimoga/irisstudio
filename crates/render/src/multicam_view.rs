@@ -123,7 +123,7 @@ pub fn render_multicam_grid(
     );
 
     // Fill with dark studio background (#0B0D13)
-    for chunk in out_frame.data.chunks_exact_mut(4) {
+    for chunk in out_frame.data.as_chunks_mut::<4>().0 {
         chunk[0] = 11;
         chunk[1] = 13;
         chunk[2] = 19;

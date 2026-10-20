@@ -27,7 +27,7 @@ impl Compositor {
             VideoFrame::new(self.canvas_dimensions, PixelFormat::Rgba8, time, duration);
 
         // Fill background with opaque black [0, 0, 0, 255]
-        for chunk in final_frame.data.chunks_exact_mut(4) {
+        for chunk in final_frame.data.as_chunks_mut::<4>().0 {
             chunk[0] = 0;
             chunk[1] = 0;
             chunk[2] = 0;

@@ -917,7 +917,7 @@ pub extern "C" fn iris_photo_apply_brush(
     }
     let coord_slice = unsafe { slice::from_raw_parts(points_coords, num_points * 2) };
     let mut points = Vec::with_capacity(num_points);
-    for chunk in coord_slice.chunks_exact(2) {
+    for chunk in coord_slice.as_chunks::<2>().0 {
         points.push((chunk[0], chunk[1]));
     }
     let total_bytes = (width * height * 4) as usize;
@@ -1230,7 +1230,9 @@ pub extern "C" fn iris_curves_apply_rgb(
             ];
         }
         let s = unsafe { slice::from_raw_parts(ptr, count * 2) };
-        s.chunks_exact(2)
+        s.as_chunks::<2>()
+            .0
+            .iter()
             .map(|chunk| SplinePoint {
                 x: chunk[0],
                 y: chunk[1],

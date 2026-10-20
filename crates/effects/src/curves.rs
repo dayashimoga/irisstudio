@@ -135,7 +135,7 @@ impl CurveLut {
     }
 
     pub fn apply(&self, pixels: &mut [u8]) {
-        for chunk in pixels.chunks_exact_mut(4) {
+        for chunk in pixels.as_chunks_mut::<4>().0 {
             chunk[0] = self.lut[chunk[0] as usize];
             chunk[1] = self.lut[chunk[1] as usize];
             chunk[2] = self.lut[chunk[2] as usize];
@@ -174,7 +174,7 @@ impl RgbCurves {
         let g_lut = &self.green.lut;
         let b_lut = &self.blue.lut;
 
-        for chunk in pixels.chunks_exact_mut(4) {
+        for chunk in pixels.as_chunks_mut::<4>().0 {
             let r = r_lut[chunk[0] as usize];
             let g = g_lut[chunk[1] as usize];
             let b = b_lut[chunk[2] as usize];
