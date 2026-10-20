@@ -149,7 +149,7 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 shrinkWrap: true,
                 itemCount: filtered.length,
-                separatorBuilder: (_, _) => const Divider(height: 1, indent: 48),
+                separatorBuilder: (_, __) => const Divider(height: 1, indent: 48),
                 itemBuilder: (ctx, idx) {
                   final cmd = filtered[idx];
                   return ListTile(

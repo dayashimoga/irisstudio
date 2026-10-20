@@ -192,7 +192,7 @@ fn test_photo_layers_composition() {
 
     // Bottom layer: blue background
     let mut layer1_pixels = vec![0u8; 40 * 40 * 4];
-    for chunk in layer1_pixels.chunks_exact_mut(4) {
+    for chunk in layer1_pixels.as_chunks_mut::<4>().0 {
         chunk[0] = 0;
         chunk[1] = 0;
         chunk[2] = 255;
@@ -202,7 +202,7 @@ fn test_photo_layers_composition() {
 
     // Top layer: semi-transparent red rectangle with screen blend mode
     let mut layer2_pixels = vec![0u8; 20 * 20 * 4];
-    for chunk in layer2_pixels.chunks_exact_mut(4) {
+    for chunk in layer2_pixels.as_chunks_mut::<4>().0 {
         chunk[0] = 255;
         chunk[1] = 0;
         chunk[2] = 0;

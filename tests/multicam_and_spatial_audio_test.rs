@@ -142,19 +142,19 @@ fn test_multicam_quad_grid_rendering() {
     );
 
     // Tint each angle distinctly: Cam 1 Red, Cam 2 Green, Cam 3 Blue, Cam 4 Magenta
-    for chunk in frame1.data.chunks_exact_mut(4) {
+    for chunk in frame1.data.as_chunks_mut::<4>().0 {
         chunk[0] = 220;
         chunk[3] = 255;
     }
-    for chunk in frame2.data.chunks_exact_mut(4) {
+    for chunk in frame2.data.as_chunks_mut::<4>().0 {
         chunk[1] = 220;
         chunk[3] = 255;
     }
-    for chunk in frame3.data.chunks_exact_mut(4) {
+    for chunk in frame3.data.as_chunks_mut::<4>().0 {
         chunk[2] = 220;
         chunk[3] = 255;
     }
-    for chunk in frame4.data.chunks_exact_mut(4) {
+    for chunk in frame4.data.as_chunks_mut::<4>().0 {
         chunk[0] = 220;
         chunk[2] = 220;
         chunk[3] = 255;

@@ -395,7 +395,7 @@ class _ExportWorkspaceState extends State<ExportWorkspace> {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: jobs.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (ctx, idx) {
               final job = jobs[idx];
               final isDone = job.status == ExportStatus.completed;

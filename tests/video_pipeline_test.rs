@@ -14,7 +14,7 @@ fn create_solid_frame(dim: Dimensions, color: [u8; 4]) -> VideoFrame {
         RationalTime::ZERO,
         RationalTime::new(1, 30),
     );
-    for chunk in frame.data.chunks_exact_mut(4) {
+    for chunk in frame.data.as_chunks_mut::<4>().0 {
         chunk.copy_from_slice(&color);
     }
     frame
@@ -54,7 +54,7 @@ fn test_video_transitions_rasterization() {
         assert_eq!(dst.data.len(), 64 * 64 * 4);
 
         // Alpha channel must stay fully opaque 255
-        for chunk in dst.data.chunks_exact(4) {
+        for chunk in dst.data.as_chunks::<4>().0 {
             assert_eq!(chunk[3], 255);
         }
 
@@ -176,7 +176,12 @@ fn test_subtitle_burn_in_overlay() {
     assert!(res.is_ok());
 
     // Verify non-zero color where text/bg was rendered
-    let has_yellow_or_bg = frame.data.chunks_exact(4).any(|p| p[0] > 0 || p[2] > 0);
+    let has_yellow_or_bg = frame
+        .data
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .any(|p| p[0] > 0 || p[2] > 0);
     assert!(has_yellow_or_bg);
 }
 
