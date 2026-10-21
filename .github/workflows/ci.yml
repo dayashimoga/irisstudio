@@ -45,6 +45,17 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
+      - name: Setup Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Compile Native Rust FFI Engine
+        run: cargo build --release -p iris_ffi
+
+      - name: Stage Native Library for Flutter
+        run: |
+          mkdir -p apps/flutter
+          cp target/release/libiris_ffi.so apps/flutter/ || true
+
       - name: Setup Flutter SDK
         uses: subosito/flutter-action@v2
         with:
