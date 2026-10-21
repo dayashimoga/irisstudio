@@ -17,6 +17,8 @@ enum ActiveWorkspace { home, photo, video, export }
 
 enum VideoPreviewState { empty, loading, ready, error }
 
+enum MediaImportStatus { idle, picking, probing, initializing, ready, failed, cancelled }
+
 class IrisEngineController extends ChangeNotifier {
   ActiveWorkspace _currentWorkspace = ActiveWorkspace.home;
   ActiveWorkspace get currentWorkspace => _currentWorkspace;
@@ -37,6 +39,44 @@ class IrisEngineController extends ChangeNotifier {
 
   String? _videoPreviewError;
   String? get videoPreviewError => _videoPreviewError;
+
+  MediaImportStatus _importStatus = MediaImportStatus.idle;
+  MediaImportStatus get importStatus => _importStatus;
+
+  String? _activeImportFilePath;
+  String? get activeImportFilePath => _activeImportFilePath;
+
+  bool _isImportCancelled = false;
+  bool _isDecodingFrame = false;
+  double? _pendingDecodeSeconds;
+
+  void cancelImport() {
+    if (_importStatus != MediaImportStatus.idle && _importStatus != MediaImportStatus.ready) {
+      _isImportCancelled = true;
+      _importStatus = MediaImportStatus.cancelled;
+      _videoPreviewState = VideoPreviewState.empty;
+      _videoPreviewError = 'Media loading cancelled by user';
+      _activeImportFilePath = null;
+      notifyListeners();
+      Future.delayed(const Duration(milliseconds: 200), () {
+        if (_importStatus == MediaImportStatus.cancelled) {
+          _importStatus = MediaImportStatus.idle;
+          notifyListeners();
+        }
+      });
+    }
+  }
+
+  void clearVideoError() {
+    _videoPreviewError = null;
+    if (_videoPreviewState == VideoPreviewState.error) {
+      _videoPreviewState = VideoPreviewState.empty;
+    }
+    if (_importStatus == MediaImportStatus.failed || _importStatus == MediaImportStatus.cancelled) {
+      _importStatus = MediaImportStatus.idle;
+    }
+    notifyListeners();
+  }
 
   ui.Image? _programPreviewImage;
   ui.Image? get programPreviewImage => _programPreviewImage;
@@ -507,72 +547,88 @@ class IrisEngineController extends ChangeNotifier {
   }
 
   Future<void> _decodeProgramFrameAtPlayhead() async {
+    if (_isDecodingFrame) {
+      _pendingDecodeSeconds = _playheadSeconds;
+      return;
+    }
+    _isDecodingFrame = true;
     final currentGen = ++_seekGenerationId;
-    if (_project.tracks.isEmpty) {
-      _videoPreviewState = VideoPreviewState.empty;
-      _programPreviewImage = null;
-      notifyListeners();
-      return;
-    }
-
-    // Find active top video clip under playhead
-    ClipModel? activeClip;
-    MediaItem? activeMedia;
-    for (final track in _project.tracks.reversed) {
-      if (track.kind == TrackKindModel.video && !track.isMuted) {
-        for (final clip in track.clips) {
-          if (_playheadSeconds >= clip.timelineStart &&
-              _playheadSeconds <= clip.timelineStart + clip.duration) {
-            activeClip = clip;
-            activeMedia = _mediaBin.firstWhere(
-              (m) => m.id == clip.assetId,
-              orElse: () => MediaItem.empty(),
-            );
-            break;
-          }
-        }
-        if (activeClip != null) break;
-      }
-    }
-
-    if (activeClip == null || activeMedia == null || activeMedia.filePath.isEmpty) {
-      if (_programPreviewImage == null) {
+    try {
+      if (_project.tracks.isEmpty) {
         _videoPreviewState = VideoPreviewState.empty;
-      }
-      notifyListeners();
-      return;
-    }
-
-    final file = File(activeMedia.filePath);
-    if (!file.existsSync()) {
-      _videoPreviewState = VideoPreviewState.error;
-      _videoPreviewError = 'Source media file missing: ${activeMedia.fileName}';
-      notifyListeners();
-      return;
-    }
-
-    final clipRelativeTime = (_playheadSeconds - activeClip.timelineStart).clamp(0.0, activeClip.duration);
-    final targetW = 640;
-    final targetH = 360;
-
-    final decoded = IrisFfiBindings.decodeVideoFrame(
-      filePath: activeMedia.filePath,
-      timeSecs: clipRelativeTime,
-      targetW: targetW,
-      targetH: targetH,
-    );
-
-    if (currentGen != _seekGenerationId) {
-      return;
-    }
-
-    if (decoded != null) {
-      final img = await _convertPixelsToUiImage(decoded.pixels, decoded.width, decoded.height);
-      if (currentGen == _seekGenerationId && img != null) {
-        _programPreviewImage = img;
-        _videoPreviewState = VideoPreviewState.ready;
-        _videoPreviewError = null;
+        _programPreviewImage = null;
         notifyListeners();
+        return;
+      }
+
+      // Find active top video clip under playhead
+      ClipModel? activeClip;
+      MediaItem? activeMedia;
+      for (final track in _project.tracks.reversed) {
+        if (track.kind == TrackKindModel.video && !track.isMuted) {
+          for (final clip in track.clips) {
+            if (_playheadSeconds >= clip.timelineStart &&
+                _playheadSeconds <= clip.timelineStart + clip.duration) {
+              activeClip = clip;
+              activeMedia = _mediaBin.firstWhere(
+                (m) => m.id == clip.assetId,
+                orElse: () => MediaItem.empty(),
+              );
+              break;
+            }
+          }
+          if (activeClip != null) break;
+        }
+      }
+
+      if (activeClip == null || activeMedia == null || activeMedia.filePath.isEmpty) {
+        if (_programPreviewImage == null) {
+          _videoPreviewState = VideoPreviewState.empty;
+        }
+        notifyListeners();
+        return;
+      }
+
+      final file = File(activeMedia.filePath);
+      if (!file.existsSync()) {
+        _videoPreviewState = VideoPreviewState.error;
+        _videoPreviewError = 'Source media file missing: ${activeMedia.fileName}';
+        notifyListeners();
+        return;
+      }
+
+      final clipRelativeTime = (_playheadSeconds - activeClip.timelineStart).clamp(0.0, activeClip.duration);
+      final targetW = 640;
+      final targetH = 360;
+
+      final decoded = IrisFfiBindings.decodeVideoFrame(
+        filePath: activeMedia.filePath,
+        timeSecs: clipRelativeTime,
+        targetW: targetW,
+        targetH: targetH,
+      );
+
+      if (currentGen != _seekGenerationId) {
+        return;
+      }
+
+      if (decoded != null) {
+        final img = await _convertPixelsToUiImage(decoded.pixels, decoded.width, decoded.height);
+        if (currentGen == _seekGenerationId && img != null) {
+          _programPreviewImage = img;
+          _videoPreviewState = VideoPreviewState.ready;
+          _videoPreviewError = null;
+          notifyListeners();
+        }
+      }
+    } finally {
+      _isDecodingFrame = false;
+      if (_pendingDecodeSeconds != null) {
+        final nextSec = _pendingDecodeSeconds!;
+        _pendingDecodeSeconds = null;
+        if ((nextSec - _playheadSeconds).abs() > 0.001) {
+          _decodeProgramFrameAtPlayhead();
+        }
       }
     }
   }
@@ -608,29 +664,57 @@ class IrisEngineController extends ChangeNotifier {
   /// Opens a video file, creates a source-matched project sequence, inserts linked video/audio tracks,
   /// fits timeline, and decodes the first real frame into preview without synthetic color bars.
   Future<bool> openVideoFile(String filePath) async {
+    // 1. Guard against concurrent / reentrant or duplicate imports
+    if (_importStatus != MediaImportStatus.idle &&
+        _importStatus != MediaImportStatus.ready &&
+        _importStatus != MediaImportStatus.failed) {
+      debugPrint('Ignoring openVideoFile: Import already in flight: $_importStatus');
+      return false;
+    }
+
+    if (_activeImportFilePath == filePath && _importStatus == MediaImportStatus.ready) {
+      return true; // Already opened and ready
+    }
+
+    _activeImportFilePath = filePath;
+    _isImportCancelled = false;
     pause();
+
     try {
       final file = File(filePath);
       if (!await file.exists()) {
+        _importStatus = MediaImportStatus.failed;
         _videoPreviewState = VideoPreviewState.error;
         _videoPreviewError = 'File does not exist: $filePath';
+        _activeImportFilePath = null;
         notifyListeners();
         return false;
       }
 
+      _importStatus = MediaImportStatus.probing;
       _videoPreviewState = VideoPreviewState.loading;
       _videoPreviewError = null;
       notifyListeners();
 
       final probe = IrisFfiBindings.probeMedia(filePath);
+      if (_isImportCancelled) {
+        _importStatus = MediaImportStatus.cancelled;
+        return false;
+      }
+
       if (!probe.isValid) {
+        _importStatus = MediaImportStatus.failed;
         _videoPreviewState = VideoPreviewState.error;
         _videoPreviewError = probe.error ?? 'Unsupported or corrupt video file: $filePath';
+        _activeImportFilePath = null;
         notifyListeners();
         return false;
       }
 
-      // 1. Create a clean source-matched project sequence
+      _importStatus = MediaImportStatus.initializing;
+      notifyListeners();
+
+      // 2. Create a clean source-matched project sequence
       final fps = probe.fps > 0 ? probe.fps.round() : 30;
       final width = probe.width > 0 ? probe.width : 1920;
       final height = probe.height > 0 ? probe.height : 1080;
@@ -656,7 +740,7 @@ class IrisEngineController extends ChangeNotifier {
       _selectedClip = null;
       _playheadSeconds = 0.0;
 
-      // 2. Extract real video thumbnail & audio waveform
+      // 3. Extract real video thumbnail & audio waveform
       Uint8List? thumb;
       final firstFrame = IrisFfiBindings.decodeVideoFrame(
         filePath: filePath,
@@ -664,11 +748,20 @@ class IrisEngineController extends ChangeNotifier {
         targetW: 320,
         targetH: 180,
       );
+      if (_isImportCancelled) {
+        _importStatus = MediaImportStatus.cancelled;
+        return false;
+      }
+
       if (firstFrame != null) {
         thumb = firstFrame.pixels;
       }
 
       final peaks = IrisFfiBindings.extractMediaWaveform(filePath, maxPeaks: 128);
+      if (_isImportCancelled) {
+        _importStatus = MediaImportStatus.cancelled;
+        return false;
+      }
 
       final mediaItem = MediaItem.fromProbe(
         id: 'asset_vid_${DateTime.now().millisecondsSinceEpoch}',
@@ -681,7 +774,7 @@ class IrisEngineController extends ChangeNotifier {
       _mediaBin.add(mediaItem);
       _selectedMediaItem = mediaItem;
 
-      // 3. Create linked Video and Audio tracks
+      // 4. Create linked Video and Audio tracks
       final videoTrack = TrackModel(
         id: 'trk_v1',
         name: 'Video 1',
@@ -718,7 +811,7 @@ class IrisEngineController extends ChangeNotifier {
 
       _selectedClip = videoClip;
 
-      // 4. Decode real first frame for preview
+      // 5. Decode real first frame for preview
       if (firstFrame != null) {
         final uiImg = await _convertPixelsToUiImage(
           firstFrame.pixels,
@@ -732,13 +825,16 @@ class IrisEngineController extends ChangeNotifier {
         await _decodeProgramFrameAtPlayhead();
       }
 
+      _importStatus = MediaImportStatus.ready;
       _currentWorkspace = ActiveWorkspace.video;
       _recordAction('Opened video: ${mediaItem.fileName}');
       notifyListeners();
       return true;
     } catch (e) {
+      _importStatus = MediaImportStatus.failed;
       _videoPreviewState = VideoPreviewState.error;
       _videoPreviewError = 'Failed to open video: $e';
+      _activeImportFilePath = null;
       notifyListeners();
       return false;
     }

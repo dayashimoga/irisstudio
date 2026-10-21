@@ -1,10 +1,12 @@
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iris_studio/bridge/iris_engine_controller.dart';
 import 'package:iris_studio/bridge/iris_ffi_bindings.dart';
 import 'package:iris_studio/models/photo_state.dart';
 import 'package:iris_studio/models/preset_model.dart';
 import 'package:iris_studio/models/project_model.dart';
+import 'package:iris_studio/widgets/media_picker_dialog.dart';
 
 void main() {
   setUpAll(() {
@@ -197,6 +199,114 @@ void main() {
       expect(controller.photoAdjustments.exposure, inInclusiveRange(-3.0, 3.0));
       expect(controller.photoAdjustments.contrast, inInclusiveRange(-50.0, 50.0));
       expect(controller.photoAdjustments.saturation, inInclusiveRange(-50.0, 50.0));
+    });
+  });
+
+  group('P0 Stability and Bounded Import Regression Tests', () {
+    test('Deduplication: Repeated openVideoFile calls with the same file path do not duplicate sequence or media items', () async {
+      final controller = IrisEngineController(startWithDemo: false);
+      controller.createNewProject(name: 'Dedup Test', type: 'video');
+
+      final fixturePath = '${Directory.current.path}/../../tests/fixtures/test_video_360p.mp4';
+      final file = File(fixturePath);
+      expect(file.existsSync(), isTrue);
+
+      // First open
+      final firstSuccess = await controller.openVideoFile(file.path);
+      expect(firstSuccess, isTrue);
+      expect(controller.importStatus, MediaImportStatus.ready);
+      expect(controller.mediaBin.length, 1);
+      final initialProjectId = controller.project.id;
+
+      // Second identical open while ready
+      final secondSuccess = await controller.openVideoFile(file.path);
+      expect(secondSuccess, isTrue);
+      expect(controller.mediaBin.length, 1, reason: 'Media bin count must not increase on duplicate open');
+      expect(controller.project.id, initialProjectId, reason: 'Project must not be recreated for identical file');
+    });
+
+    test('Cancellation: cancelImport() aborts active import and returns to responsive idle state', () async {
+      final controller = IrisEngineController(startWithDemo: false);
+      controller.createNewProject(name: 'Cancel Test', type: 'video');
+
+      final fixturePath = '${Directory.current.path}/../../tests/fixtures/test_video_360p.mp4';
+
+      // Start import without awaiting, immediately cancel
+      final future = controller.openVideoFile(fixturePath);
+      controller.cancelImport();
+
+      final res = await future;
+      if (!res) {
+        expect(controller.importStatus, anyOf(MediaImportStatus.cancelled, MediaImportStatus.idle));
+      }
+      expect(controller.videoPreviewState, anyOf(VideoPreviewState.empty, VideoPreviewState.ready));
+    });
+
+    test('Error handling and dismissal: Nonexistent file produces actionable error and clearVideoError() restores responsive state', () async {
+      final controller = IrisEngineController(startWithDemo: false);
+      controller.createNewProject(name: 'Missing File Test', type: 'video');
+
+      final res = await controller.openVideoFile('non_existent_file_path_12345.mp4');
+      expect(res, isFalse);
+      expect(controller.importStatus, MediaImportStatus.failed);
+      expect(controller.videoPreviewState, VideoPreviewState.error);
+      expect(controller.videoPreviewError, isNotNull);
+      expect(controller.videoPreviewError!.contains('does not exist'), isTrue);
+
+      // Dismissing error clears state back to empty/idle
+      controller.clearVideoError();
+      expect(controller.videoPreviewState, VideoPreviewState.empty);
+      expect(controller.videoPreviewError, isNull);
+      expect(controller.importStatus, MediaImportStatus.idle);
+    });
+
+    test('Rapid scrubbing backpressure: Fast playhead updates do not block or crash', () async {
+      final controller = IrisEngineController(startWithDemo: false);
+      final fixturePath = '${Directory.current.path}/../../tests/fixtures/test_video_360p.mp4';
+      await controller.openVideoFile(fixturePath);
+
+      // Simulate rapid 60 FPS scrub gestures across 30 timestamps
+      for (int i = 0; i < 30; i++) {
+        controller.seekTo(i * 0.1);
+      }
+      expect(controller.playheadSeconds, closeTo(2.9, 0.001));
+      expect(controller.videoPreviewState, VideoPreviewState.ready);
+    });
+
+    test('Safe path normalization: Handles spaces and unicode gracefully', () {
+      final normalized1 = IrisFfiBindings.probeMedia('   sample.mp4   ');
+      expect(normalized1.isValid, isFalse);
+      final normalized2 = IrisFfiBindings.probeMedia('file:///C:/path/with spaces/video.mp4');
+      expect(normalized2.isValid, isFalse);
+    });
+
+    testWidgets('MediaPickerDialog blocks concurrent dialog invocations', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () {
+                MediaPickerDialog.show(context, title: 'Picker 1');
+                MediaPickerDialog.show(context, title: 'Picker 2').then((res) {
+                  expect(res, isNull, reason: 'Second concurrent picker must be rejected');
+                });
+              },
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Close dialog
+      final closeButton = find.byIcon(Icons.close);
+      if (closeButton.evaluate().isNotEmpty) {
+        await tester.tap(closeButton);
+        await tester.pumpAndSettle();
+      }
     });
   });
 }

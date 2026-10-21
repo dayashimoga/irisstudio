@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -315,6 +316,139 @@ class _VideoWorkspaceState extends State<VideoWorkspace> {
                                 ],
                               ),
                             ],
+                          ),
+                        ),
+
+                      // Interactive Loading State Overlay with Cancel Loading button
+                      if (controller.videoPreviewState == VideoPreviewState.loading ||
+                          controller.importStatus == MediaImportStatus.probing ||
+                          controller.importStatus == MediaImportStatus.initializing)
+                        Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                            decoration: BoxDecoration(
+                              color: const Color(0xF010131A),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: IrisTheme.primaryCyan.withValues(alpha: 0.4)),
+                              boxShadow: const [
+                                BoxShadow(color: Colors.black87, blurRadius: 16),
+                              ],
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SizedBox(
+                                  width: 28,
+                                  height: 28,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: IrisTheme.primaryCyan,
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                Text(
+                                  controller.importStatus == MediaImportStatus.probing
+                                      ? 'Probing Media Container...'
+                                      : (controller.importStatus == MediaImportStatus.initializing
+                                          ? 'Initializing Video Decoder...'
+                                          : 'Loading Video Media...'),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: IrisTheme.textPrimary,
+                                  ),
+                                ),
+                                if (controller.activeImportFilePath != null) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    controller.activeImportFilePath!.split(Platform.pathSeparator).last,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: IrisTheme.textMuted,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                                const SizedBox(height: 14),
+                                OutlinedButton.icon(
+                                  icon: const Icon(Icons.cancel_outlined, size: 14, color: Colors.redAccent),
+                                  label: const Text(
+                                    'Cancel Loading',
+                                    style: TextStyle(fontSize: 11, color: IrisTheme.textPrimary),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(color: IrisTheme.border),
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                  ),
+                                  onPressed: () => controller.cancelImport(),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+
+                      // Interactive Error State Callout with action buttons
+                      if (controller.videoPreviewState == VideoPreviewState.error ||
+                          controller.importStatus == MediaImportStatus.failed)
+                        Center(
+                          child: Container(
+                            constraints: const BoxConstraints(maxWidth: 380),
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                            decoration: BoxDecoration(
+                              color: const Color(0xF0150F12),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+                              boxShadow: const [
+                                BoxShadow(color: Colors.black87, blurRadius: 16),
+                              ],
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.error_outline, size: 36, color: Colors.redAccent),
+                                const SizedBox(height: 10),
+                                const Text(
+                                  'Media Loading Failed',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: IrisTheme.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  controller.videoPreviewError ?? 'Unable to parse media stream.',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(fontSize: 11, color: IrisTheme.textMuted),
+                                ),
+                                const SizedBox(height: 14),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    ElevatedButton.icon(
+                                      icon: const Icon(Icons.file_open, size: 13),
+                                      label: const Text('Open Different Video', style: TextStyle(fontSize: 11)),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: IrisTheme.primaryCyan,
+                                        foregroundColor: Colors.black,
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      ),
+                                      onPressed: () => _handleOpenVideo(context),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    OutlinedButton(
+                                      style: OutlinedButton.styleFrom(
+                                        side: const BorderSide(color: IrisTheme.border),
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      ),
+                                      onPressed: () => controller.clearVideoError(),
+                                      child: const Text('Dismiss', style: TextStyle(fontSize: 11, color: IrisTheme.textMuted)),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
                         ),
 

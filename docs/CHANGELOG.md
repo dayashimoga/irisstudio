@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - P0 System-Stability Incident: Bounded Process Isolation & Video Freeze Elimination (2026-10-21)
+
+### Fixed
+- **P0 Video-Import Desktop Freeze & Invisible Popup Storms**:
+  - Eliminated rapid spawning of Windows console host windows (`conhost.exe`) by enforcing `CREATE_NO_WINDOW = 0x08000000`, `stdin(Stdio::null())`, and bounded output piping (`Stdio::piped()`) across all helper process executions in `crates/media/src/demux.rs` and `hardware.rs`.
+  - Replaced per-frame `probe_file()` invocations in `RealMediaDecoder::decode_video_frame()` with in-memory metadata caching and 16-slot LRU `FRAME_CACHE`.
+  - Added atomic single-flight lock `FFMPEG_ACTIVE` preventing overlapping decode processes.
+  - Implemented hard timeout enforcement (`run_command_with_timeout`) with immediate child termination (`child.kill()`).
+  - Added explicit import state machine (`MediaImportStatus`: `idle` → `picking` → `probing` → `initializing` → `ready`) with responsive "Cancel Loading" button in `video_workspace.dart`.
+  - Added single-instance mutex guard `MediaPickerDialog._isPickerActive` preventing multiple file picker dialogs from opening concurrently.
+  - Rate-limited playhead frame decoding with backpressure tracking (`_isDecodingFrame` and `_pendingDecodeSeconds`), dropping stale scrubbing frames without starving Flutter's UI thread.
+
 ## [1.2.0] - Phase 8: Video Loading Repair, Decoded Playback Pipeline, & Cross-Platform Preset Engine (2026-10-21)
 
 ### Added

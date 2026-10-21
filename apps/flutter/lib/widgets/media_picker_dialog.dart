@@ -23,6 +23,8 @@ class MediaPickerDialog extends StatefulWidget {
     this.initialDirectory,
   });
 
+  static bool _isPickerActive = false;
+
   static Future<List<String>?> show(
     BuildContext context, {
     required String title,
@@ -31,19 +33,25 @@ class MediaPickerDialog extends StatefulWidget {
     bool isSaveMode = false,
     String? defaultSaveFileName,
     String? initialDirectory,
-  }) {
-    return showDialog<List<String>>(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) => MediaPickerDialog(
-        title: title,
-        initialFilter: initialFilter,
-        allowMultiple: allowMultiple,
-        isSaveMode: isSaveMode,
-        defaultSaveFileName: defaultSaveFileName,
-        initialDirectory: initialDirectory,
-      ),
-    );
+  }) async {
+    if (_isPickerActive) return null;
+    _isPickerActive = true;
+    try {
+      return await showDialog<List<String>>(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) => MediaPickerDialog(
+          title: title,
+          initialFilter: initialFilter,
+          allowMultiple: allowMultiple,
+          isSaveMode: isSaveMode,
+          defaultSaveFileName: defaultSaveFileName,
+          initialDirectory: initialDirectory,
+        ),
+      );
+    } finally {
+      _isPickerActive = false;
+    }
   }
 
   @override
@@ -135,10 +143,21 @@ class _MediaPickerDialogState extends State<MediaPickerDialog> {
     }
   }
 
+  int _probeGeneration = 0;
   void _probeSelectedFile(String path) {
+    final currentGen = ++_probeGeneration;
     setState(() {
       _probedPath = path;
-      _probedInfo = IrisFfiBindings.probeMedia(path);
+    });
+    Future.delayed(const Duration(milliseconds: 60), () {
+      if (currentGen == _probeGeneration && mounted) {
+        final info = IrisFfiBindings.probeMedia(path);
+        if (currentGen == _probeGeneration && mounted) {
+          setState(() {
+            _probedInfo = info;
+          });
+        }
+      }
     });
   }
 
@@ -161,37 +180,7 @@ class _MediaPickerDialogState extends State<MediaPickerDialog> {
     }
   }
 
-  void _openNativeSystemDialog() {
-    // Run PowerShell native Windows OpenFileDialog / SaveFileDialog
-    if (!Platform.isWindows) return;
 
-    final isSave = widget.isSaveMode;
-    final filterString = switch (_filterMode) {
-      FileFilterMode.photos => 'Image Files (*.jpg;*.jpeg;*.png;*.webp)|*.jpg;*.jpeg;*.png;*.webp|All Files (*.*)|*.*',
-      FileFilterMode.videos => 'Video Files (*.mp4;*.mov;*.mkv;*.webm)|*.mp4;*.mov;*.mkv;*.webm|All Files (*.*)|*.*',
-      FileFilterMode.audio => 'Audio Files (*.wav;*.mp3;*.aac;*.flac)|*.wav;*.mp3;*.aac;*.flac|All Files (*.*)|*.*',
-      FileFilterMode.projects => 'Iris Studio Project (*.irisproj;*.json)|*.irisproj;*.json|All Files (*.*)|*.*',
-      _ => 'Supported Media Files|*.jpg;*.jpeg;*.png;*.webp;*.mp4;*.mov;*.mkv;*.webm;*.wav;*.mp3;*.irisproj|All Files (*.*)|*.*',
-    };
-
-    final script = isSave
-        ? "Add-Type -AssemblyName System.Windows.Forms; \$d = New-Object System.Windows.Forms.SaveFileDialog; \$d.Filter = '$filterString'; \$d.InitialDirectory = '${_currentDirectory.path.replaceAll("'", "''")}'; if (\$d.ShowDialog() -eq 'OK') { Write-Output \$d.FileName }"
-        : "Add-Type -AssemblyName System.Windows.Forms; \$d = New-Object System.Windows.Forms.OpenFileDialog; \$d.Filter = '$filterString'; \$d.Multiselect = ${widget.allowMultiple ? '\$true' : '\$false'}; \$d.InitialDirectory = '${_currentDirectory.path.replaceAll("'", "''")}'; if (\$d.ShowDialog() -eq 'OK') { \$d.FileNames | ForEach-Object { Write-Output \$_ } }";
-
-    Process.run('powershell', ['-NoProfile', '-Command', script]).then((result) {
-      if (result.exitCode == 0 && result.stdout != null) {
-        final out = result.stdout.toString().trim();
-        if (out.isNotEmpty) {
-          final lines = out.split(RegExp(r'[\r\n]+')).where((l) => l.trim().isNotEmpty).toList();
-          if (lines.isNotEmpty && mounted) {
-            Navigator.pop(context, lines);
-          }
-        }
-      }
-    }).catchError((e) {
-      debugPrint('Native dialog error: $e');
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -270,14 +259,6 @@ class _MediaPickerDialogState extends State<MediaPickerDialog> {
           ),
           const Spacer(),
 
-          // System Native Dialog Shortcut
-          if (Platform.isWindows)
-            TextButton.icon(
-              icon: const Icon(Icons.open_in_new, size: 14),
-              label: const Text('System File Dialog', style: TextStyle(fontSize: 11)),
-              style: TextButton.styleFrom(foregroundColor: IrisTheme.primaryCyan),
-              onPressed: _openNativeSystemDialog,
-            ),
 
           const SizedBox(width: 8),
           IconButton(
@@ -340,33 +321,36 @@ class _MediaPickerDialogState extends State<MediaPickerDialog> {
           final path = b['path'] as String;
           final isSelected = _currentDirectory.path.toLowerCase() == path.toLowerCase();
 
-          return ListTile(
-            dense: true,
-            visualDensity: VisualDensity.compact,
-            leading: Icon(b['icon'] as IconData, size: 16, color: isSelected ? IrisTheme.primaryCyan : IrisTheme.textSecondary),
-            title: Text(
-              b['name'] as String,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                color: isSelected ? IrisTheme.primaryCyan : IrisTheme.textPrimary,
+          return Material(
+            color: Colors.transparent,
+            child: ListTile(
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              leading: Icon(b['icon'] as IconData, size: 16, color: isSelected ? IrisTheme.primaryCyan : IrisTheme.textSecondary),
+              title: Text(
+                b['name'] as String,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color: isSelected ? IrisTheme.primaryCyan : IrisTheme.textPrimary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              selected: isSelected,
+              selectedTileColor: IrisTheme.surfaceSelected,
+              onTap: () {
+                if (Directory(path).existsSync()) {
+                  setState(() {
+                    _currentDirectory = Directory(path);
+                    _selectedPaths.clear();
+                    _probedPath = null;
+                    _probedInfo = null;
+                  });
+                  _loadDirectory();
+                }
+              },
             ),
-            selected: isSelected,
-            selectedTileColor: IrisTheme.surfaceSelected,
-            onTap: () {
-              if (Directory(path).existsSync()) {
-                setState(() {
-                  _currentDirectory = Directory(path);
-                  _selectedPaths.clear();
-                  _probedPath = null;
-                  _probedInfo = null;
-                });
-                _loadDirectory();
-              }
-            },
           );
         },
       ),

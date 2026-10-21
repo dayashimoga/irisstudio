@@ -133,15 +133,17 @@ impl HardwareDeviceContext {
 
     #[cfg(target_os = "windows")]
     fn detect_windows_gpu() -> String {
-        if let Ok(output) = std::process::Command::new("reg")
-            .args([
-                "query",
-                r"HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000",
-                "/v",
-                "DriverDesc",
-            ])
-            .output()
-        {
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new("reg");
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        cmd.stdin(std::process::Stdio::null());
+        cmd.args([
+            "query",
+            r"HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000",
+            "/v",
+            "DriverDesc",
+        ]);
+        if let Ok(output) = cmd.output() {
             if output.status.success() {
                 let s = String::from_utf8_lossy(&output.stdout);
                 for line in s.lines() {

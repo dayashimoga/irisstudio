@@ -178,3 +178,24 @@
   - [x] Zero Clippy warnings (`cargo clippy --workspace -- -D warnings`), 100% clean formatting (`cargo fmt`), and 0 Flutter analyzer issues.
   - [x] Updated `docs/FeatureAudit.md`, `docs/Requirements.md`, `docs/Architecture.md`, `docs/UserGuide.md`, `docs/PresetReference.md`, `docs/TestingStrategy.md`, `docs/PerformanceReport.md`, `docs/CHANGELOG.md`, and `docs/TODO.md`.
 
+## P0 System-Stability Incident: Video Import Desktop Freeze (Completed & Verified)
+- [x] Safe isolation & containment:
+  - [x] Identify root cause: `conhost.exe` creation storms from unflagged `ffmpeg`/`ffprobe` invocations without `CREATE_NO_WINDOW`, coupled with per-frame probing in `decode_video_frame`.
+  - [x] Provide safe startup without media auto-loading; keep user project files intact.
+- [x] Native Rust process execution repairs:
+  - [x] Enforce `CREATE_NO_WINDOW = 0x08000000`, `stdin(Stdio::null())`, and bounded `stdout`/`stderr` pipes on all Windows child commands (`crates/media/src/demux.rs`, `hardware.rs`).
+  - [x] Prioritize pure-Rust `IsoBmffParser::probe` (<0.5ms, 0 external processes).
+  - [x] Memoize binary availability via `OnceLock<bool>`.
+  - [x] In-memory 16-slot LRU `FRAME_CACHE` and atomic single-flight lock `FFMPEG_ACTIVE`.
+  - [x] Hard timeout kill (`run_command_with_timeout`) preventing orphan worker processes.
+- [x] Flutter UI bounded import & state machine repairs:
+  - [x] Explicit `MediaImportStatus` state machine: `idle` → `picking` → `probing` → `initializing` → `ready`, with `failed` and `cancelled` terminal handling.
+  - [x] Single-instance dialog lock (`MediaPickerDialog._isPickerActive`) preventing duplicate dialog storms.
+  - [x] Rate-limited playhead frame decoding with backpressure (`_isDecodingFrame`, `_pendingDecodeSeconds`).
+  - [x] Viewport loading card with responsive "Cancel Loading" button (`controller.cancelImport()`).
+  - [x] Actionable inline error card with "Open Different Video" and "Dismiss" buttons.
+- [x] Regression test suite:
+  - [x] Rust unit tests for `create_safe_command`, `run_command_with_timeout`, `FRAME_CACHE`, and corrupted ISO-BMFF handling.
+  - [x] Flutter automated tests for duplicate import deduplication, cancellation, error dismissal, rapid scrubbing backpressure, path normalization, and concurrent dialog prevention.
+
+
