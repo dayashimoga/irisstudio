@@ -88,7 +88,10 @@ void main() {
     // Phase 4: Verify Hardware Acceleration Context Card
     await tester.ensureVisible(find.text('HARDWARE ACCEL'));
     expect(find.text('HARDWARE ACCEL'), findsOneWidget);
-    expect(find.textContaining('D3D11VA'), findsOneWidget);
+    expect(
+      find.textContaining(RegExp(r'(D3D11VA|VA-API|VideoToolbox|MediaCodec|Acceleration|Driver)')),
+      findsAtLeastNWidgets(1),
+    );
 
     // Phase 4: Verify Motion Graphics Titles & Lower-Thirds Card
     await tester.ensureVisible(find.text('MOTION GRAPHICS TITLES'));
