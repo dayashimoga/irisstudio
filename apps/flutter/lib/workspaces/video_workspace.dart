@@ -1,10 +1,13 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../bridge/iris_engine_controller.dart';
+import '../models/preset_model.dart';
 import '../models/project_model.dart';
 import '../theme/iris_theme.dart';
 import '../widgets/audio_meters.dart';
 import '../widgets/media_bin_panel.dart';
+import '../widgets/media_picker_dialog.dart';
 import '../widgets/timecode_display.dart';
 
 class VideoWorkspace extends StatefulWidget {
@@ -18,7 +21,31 @@ class VideoWorkspace extends StatefulWidget {
 
 class _VideoWorkspaceState extends State<VideoWorkspace> {
   bool _isMediaBinOpen = false;
+  int _rightPanelTabIndex = 0; // 0 = Inspector, 1 = Presets
+  String _presetSearchQuery = '';
+  String _selectedPresetCategory = 'All';
   IrisEngineController get controller => widget.controller;
+
+  Future<void> _handleOpenVideo(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final paths = await MediaPickerDialog.show(
+      context,
+      title: 'Open Video for Editing',
+      initialFilter: FileFilterMode.videos,
+      allowMultiple: false,
+    );
+    if (paths != null && paths.isNotEmpty) {
+      final ok = await widget.controller.openVideoFile(paths.first);
+      if (!ok && mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(widget.controller.videoPreviewError ?? 'Failed to open video'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -170,6 +197,39 @@ class _VideoWorkspaceState extends State<VideoWorkspace> {
                   visualDensity: VisualDensity.compact,
                   onSelected: (val) => controller.toggleMultiCamQuadView(val),
                 ),
+                const SizedBox(width: 12),
+                const SizedBox(height: 16, child: VerticalDivider(width: 1, color: IrisTheme.border)),
+                const SizedBox(width: 12),
+                ChoiceChip(
+                  avatar: Icon(
+                    controller.isSourcePreviewActive ? Icons.source : Icons.ondemand_video,
+                    size: 13,
+                    color: controller.isSourcePreviewActive ? IrisTheme.accentAmber : IrisTheme.primaryCyan,
+                  ),
+                  label: Text(
+                    controller.isSourcePreviewActive ? 'Source' : 'Program',
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                  selected: controller.isSourcePreviewActive,
+                  backgroundColor: IrisTheme.surfaceLight,
+                  selectedColor: IrisTheme.accentAmber.withValues(alpha: 0.25),
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (val) => controller.setSourcePreviewActive(val),
+                ),
+                const SizedBox(width: 8),
+                FilterChip(
+                  avatar: Icon(
+                    Icons.tune,
+                    size: 13,
+                    color: controller.diagnosticsDemoMode ? IrisTheme.accentAmber : IrisTheme.textMuted,
+                  ),
+                  label: const Text('Bars (Diag)', style: TextStyle(fontSize: 10)),
+                  selected: controller.diagnosticsDemoMode,
+                  backgroundColor: IrisTheme.surfaceLight,
+                  selectedColor: IrisTheme.accentAmber.withValues(alpha: 0.25),
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (val) => controller.setDiagnosticsDemoMode(val),
+                ),
               ],
             ),
             ),
@@ -196,13 +256,67 @@ class _VideoWorkspaceState extends State<VideoWorkspace> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      // Video Frame Rendering (Synthetic SMPTE / active clips)
+                      // Video Frame Rendering (Real native frame / states / subtitles)
                       CustomPaint(
                         painter: _TimelinePreviewPainter(
                           playheadSeconds: controller.playheadSeconds,
                           subtitles: controller.project.subtitles,
+                          previewState: controller.videoPreviewState,
+                          programImage: controller.programPreviewImage,
+                          sourceImage: controller.sourcePreviewImage,
+                          isSourcePreview: controller.isSourcePreviewActive,
+                          isDiagnosticsDemo: controller.diagnosticsDemoMode,
+                          errorMessage: controller.videoPreviewError,
                         ),
                       ),
+
+                      // Interactive Empty State Callout when sequence has no clips
+                      if (controller.videoPreviewState == VideoPreviewState.empty && !controller.diagnosticsDemoMode)
+                        Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.movie_filter_outlined, size: 40, color: IrisTheme.primaryCyan),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'Ready to Edit',
+                                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: IrisTheme.textPrimary),
+                              ),
+                              const SizedBox(height: 6),
+                              const Text(
+                                'Open a video to create a source-matched sequence with linked audio.',
+                                style: TextStyle(fontSize: 11, color: IrisTheme.textMuted),
+                              ),
+                              const SizedBox(height: 16),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ElevatedButton.icon(
+                                    icon: const Icon(Icons.file_open, size: 14),
+                                    label: const Text('Open Video File', style: TextStyle(fontSize: 11)),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: IrisTheme.primaryCyan,
+                                      foregroundColor: Colors.black,
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    ),
+                                    onPressed: () => _handleOpenVideo(context),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  OutlinedButton.icon(
+                                    icon: const Icon(Icons.video_library_outlined, size: 14),
+                                    label: const Text('Media Pool', style: TextStyle(fontSize: 11)),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: IrisTheme.textPrimary,
+                                      side: const BorderSide(color: IrisTheme.border),
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    ),
+                                    onPressed: () => setState(() => _isMediaBinOpen = true),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
 
                       // Phase 5: Multi-Camera Quad-View 2x2 Grid Monitor Overlay
                       if (controller.multiCam.isQuadViewActive)
@@ -424,6 +538,20 @@ class _VideoWorkspaceState extends State<VideoWorkspace> {
               tooltip: _isMediaBinOpen ? 'Hide Media Bin' : 'Show Media Bin',
               onPressed: () => setState(() => _isMediaBinOpen = !_isMediaBinOpen),
             ),
+            const SizedBox(width: 6),
+
+            // Open Video Button
+            ElevatedButton.icon(
+              icon: const Icon(Icons.file_open_outlined, size: 13),
+              label: const Text('Open Video', style: TextStyle(fontSize: 11)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: IrisTheme.surfaceLight,
+                foregroundColor: IrisTheme.primaryCyan,
+                elevation: 0,
+                visualDensity: VisualDensity.compact,
+              ),
+              onPressed: () => _handleOpenVideo(context),
+            ),
             const SizedBox(width: 8),
             const VerticalDivider(width: 1, indent: 10, endIndent: 10),
             const SizedBox(width: 8),
@@ -517,11 +645,538 @@ class _VideoWorkspaceState extends State<VideoWorkspace> {
   }
 
   Widget _buildInspectorPanel(BuildContext context) {
-    final clip = controller.selectedClip;
-    if (clip == null) {
-      return _buildMasterInspector(context);
+    return Column(
+      children: [
+        // Tab Header: [INSPECTOR] | [LOOK PRESETS]
+        Container(
+          height: 38,
+          decoration: const BoxDecoration(
+            color: IrisTheme.surfaceDark,
+            border: Border(bottom: BorderSide(color: IrisTheme.border)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => _rightPanelTabIndex = 0),
+                  child: Container(
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: _rightPanelTabIndex == 0 ? IrisTheme.primaryCyan : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                    child: Text(
+                      'INSPECTOR',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: _rightPanelTabIndex == 0 ? IrisTheme.primaryCyan : IrisTheme.textMuted,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => _rightPanelTabIndex = 1),
+                  child: Container(
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: _rightPanelTabIndex == 1 ? IrisTheme.primaryCyan : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.palette_outlined,
+                          size: 13,
+                          color: _rightPanelTabIndex == 1 ? IrisTheme.primaryCyan : IrisTheme.textMuted,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            'PRESETS',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: _rightPanelTabIndex == 1 ? IrisTheme.primaryCyan : IrisTheme.textMuted,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Tab Body
+        Expanded(
+          child: _rightPanelTabIndex == 0
+              ? (controller.selectedClip == null
+                  ? _buildMasterInspector(context)
+                  : _buildClipInspector(context, controller.selectedClip!))
+              : _buildVideoPresetsPanel(context),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVideoPresetsPanel(BuildContext context) {
+    final activePreset = controller.activePreset;
+    final isModified = controller.isPresetModified;
+    final intensity = controller.presetIntensity;
+
+    // Filter presets
+    final List<PresetModel> allPresets = controller.videoPresets;
+    final categories = ['All', 'Cinema', 'Sports', 'Film', 'Creative', 'Vintage', 'My Presets', 'Favorites'];
+
+    final filtered = allPresets.where((p) {
+      if (_selectedPresetCategory == 'Favorites') {
+        if (!controller.favoritePresetIds.contains(p.id)) return false;
+      } else if (_selectedPresetCategory == 'My Presets') {
+        if (p.isBuiltin) return false;
+      } else if (_selectedPresetCategory != 'All') {
+        if (!p.category.toLowerCase().contains(_selectedPresetCategory.toLowerCase())) return false;
+      }
+
+      if (_presetSearchQuery.trim().isNotEmpty) {
+        final q = _presetSearchQuery.trim().toLowerCase();
+        final match = p.name.toLowerCase().contains(q) ||
+            p.category.toLowerCase().contains(q) ||
+            p.description.toLowerCase().contains(q);
+        if (!match) return false;
+      }
+      return true;
+    }).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Active preset banner & intensity slider
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: const BoxDecoration(
+            color: IrisTheme.surfaceLight,
+            border: Border(bottom: BorderSide(color: IrisTheme.border)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.auto_fix_high, size: 14, color: IrisTheme.primaryCyan),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      activePreset != null ? activePreset.name : 'No Preset Active',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: IrisTheme.textPrimary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (activePreset != null && isModified)
+                    Container(
+                      margin: const EdgeInsets.only(right: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: IrisTheme.accentAmber.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(3),
+                        border: Border.all(color: IrisTheme.accentAmber.withValues(alpha: 0.6)),
+                      ),
+                      child: const Text(
+                        'MODIFIED',
+                        style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: IrisTheme.accentAmber),
+                      ),
+                    ),
+                  if (activePreset != null)
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: IrisTheme.textMuted,
+                      ),
+                      onPressed: () => controller.resetPreset(isVideo: true),
+                      child: const Text('Reset', style: TextStyle(fontSize: 10)),
+                    ),
+                ],
+              ),
+              if (activePreset != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Text('Intensity: ', style: TextStyle(fontSize: 10, color: IrisTheme.textMuted)),
+                    Text(
+                      '${(intensity * 100).round()}%',
+                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: IrisTheme.primaryCyan),
+                    ),
+                    Expanded(
+                      child: SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 2,
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        ),
+                        child: Slider(
+                          value: intensity,
+                          min: 0.0,
+                          max: 1.0,
+                          onChanged: (val) => controller.setPresetIntensity(val, isVideo: true),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+
+        // Action Toolbar (Save Custom, Import)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: const BoxDecoration(
+            color: IrisTheme.surfaceDark,
+            border: Border(bottom: BorderSide(color: IrisTheme.border)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.bookmark_add_outlined, size: 12),
+                  label: const Text('Save Preset', style: TextStyle(fontSize: 10)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: IrisTheme.primaryCyan,
+                    side: BorderSide(color: IrisTheme.primaryCyan.withValues(alpha: 0.5)),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () => _showSaveCustomPresetDialog(context, isVideo: true),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.file_download_outlined, size: 12),
+                  label: const Text('Import Look', style: TextStyle(fontSize: 10)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: IrisTheme.textPrimary,
+                    side: const BorderSide(color: IrisTheme.border),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () => _handleImportPreset(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Search Bar
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: TextField(
+            style: const TextStyle(fontSize: 11, color: IrisTheme.textPrimary),
+            decoration: InputDecoration(
+              hintText: 'Search video presets...',
+              hintStyle: const TextStyle(fontSize: 11, color: IrisTheme.textMuted),
+              prefixIcon: const Icon(Icons.search, size: 14, color: IrisTheme.textMuted),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(vertical: 8),
+              filled: true,
+              fillColor: IrisTheme.surfaceLight,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(4),
+                borderSide: BorderSide.none,
+              ),
+            ),
+            onChanged: (val) => setState(() => _presetSearchQuery = val),
+          ),
+        ),
+
+        // Category Chips (Horizontal Scroll)
+        SizedBox(
+          height: 32,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            scrollDirection: Axis.horizontal,
+            itemCount: categories.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 6),
+            itemBuilder: (context, idx) {
+              final cat = categories[idx];
+              final isSelected = _selectedPresetCategory == cat;
+              return ChoiceChip(
+                label: Text(cat, style: TextStyle(fontSize: 10, color: isSelected ? Colors.black : IrisTheme.textPrimary)),
+                selected: isSelected,
+                selectedColor: IrisTheme.primaryCyan,
+                backgroundColor: IrisTheme.surfaceLight,
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                onSelected: (selected) {
+                  if (selected) setState(() => _selectedPresetCategory = cat);
+                },
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 6),
+
+        // Presets List
+        Expanded(
+          child: filtered.isEmpty
+              ? Center(
+                  child: Text(
+                    'No presets found in "$_selectedPresetCategory"',
+                    style: const TextStyle(fontSize: 11, color: IrisTheme.textMuted),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  itemCount: filtered.length,
+                  itemBuilder: (context, idx) {
+                    final p = filtered[idx];
+                    final isCurrent = activePreset?.id == p.id;
+                    final isFav = controller.favoritePresetIds.contains(p.id);
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      decoration: BoxDecoration(
+                        color: isCurrent
+                            ? IrisTheme.primaryCyan.withValues(alpha: 0.12)
+                            : IrisTheme.surfaceLight,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: isCurrent ? IrisTheme.primaryCyan : IrisTheme.border,
+                        ),
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () => controller.applyPreset(p, isVideo: true),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      p.name,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: isCurrent ? IrisTheme.primaryCyan : IrisTheme.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: IrisTheme.surfaceDark,
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                    child: Text(
+                                      p.category.toUpperCase(),
+                                      style: const TextStyle(fontSize: 8, color: IrisTheme.textMuted, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: Icon(
+                                      isFav ? Icons.star : Icons.star_border,
+                                      size: 14,
+                                      color: isFav ? IrisTheme.accentAmber : IrisTheme.textMuted,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                                    onPressed: () => controller.toggleFavoritePreset(p.id),
+                                  ),
+                                  if (!p.isBuiltin)
+                                    PopupMenuButton<String>(
+                                      icon: const Icon(Icons.more_vert, size: 14, color: IrisTheme.textMuted),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                                      onSelected: (val) async {
+                                        if (val == 'duplicate') {
+                                          await controller.duplicatePreset(p);
+                                        } else if (val == 'delete') {
+                                          await controller.deleteCustomPreset(p.id);
+                                        } else if (val == 'export') {
+                                          final savePaths = await MediaPickerDialog.show(
+                                            context,
+                                            title: 'Export Preset',
+                                            isSaveMode: true,
+                                            defaultSaveFileName: '${p.name.replaceAll(' ', '_')}.irispreset',
+                                          );
+                                          if (savePaths != null && savePaths.isNotEmpty) {
+                                            await controller.exportPresetToFile(p, savePaths.first);
+                                          }
+                                        }
+                                      },
+                                      itemBuilder: (ctx) => [
+                                        const PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
+                                        const PopupMenuItem(value: 'export', child: Text('Export .irispreset')),
+                                        const PopupMenuItem(
+                                          value: 'delete',
+                                          child: Text('Delete', style: TextStyle(color: IrisTheme.accentRed)),
+                                        ),
+                                      ],
+                                    ),
+                                ],
+                              ),
+                              if (p.description.isNotEmpty) ...[
+                                const SizedBox(height: 3),
+                                Text(
+                                  p.description,
+                                  style: const TextStyle(fontSize: 10, color: IrisTheme.textMuted),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showSaveCustomPresetDialog(BuildContext context, {required bool isVideo}) async {
+    final nameCtrl = TextEditingController(text: 'My Custom Look');
+    final descCtrl = TextEditingController();
+    String category = 'Custom';
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          backgroundColor: IrisTheme.surfaceDark,
+          title: const Text('Save Custom Preset', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Preset Name', style: TextStyle(fontSize: 11, color: IrisTheme.textMuted)),
+              const SizedBox(height: 4),
+              TextField(
+                controller: nameCtrl,
+                style: const TextStyle(fontSize: 12),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: IrisTheme.surfaceLight,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide.none),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text('Category', style: TextStyle(fontSize: 11, color: IrisTheme.textMuted)),
+              const SizedBox(height: 4),
+              DropdownButtonFormField<String>(
+                initialValue: category,
+                dropdownColor: IrisTheme.surfaceDark,
+                items: ['Custom', 'Cinema', 'Sports', 'Film', 'Creative', 'Vintage']
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 12))))
+                    .toList(),
+                onChanged: (val) {
+                  if (val != null) setDlgState(() => category = val);
+                },
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: IrisTheme.surfaceLight,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide.none),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text('Description (Optional)', style: TextStyle(fontSize: 11, color: IrisTheme.textMuted)),
+              const SizedBox(height: 4),
+              TextField(
+                controller: descCtrl,
+                style: const TextStyle(fontSize: 12),
+                maxLines: 2,
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: IrisTheme.surfaceLight,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide.none),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(color: IrisTheme.textMuted)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: IrisTheme.primaryCyan,
+                foregroundColor: Colors.black,
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Save Preset'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == true && context.mounted) {
+      final messenger = ScaffoldMessenger.of(context);
+      await controller.saveCustomPreset(
+        name: nameCtrl.text,
+        category: category,
+        description: descCtrl.text,
+        isVideo: isVideo,
+      );
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Saved custom preset: "${nameCtrl.text}"'),
+            backgroundColor: IrisTheme.accentGreen,
+          ),
+        );
+      }
     }
-    return _buildClipInspector(context, clip);
+  }
+
+  Future<void> _handleImportPreset(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final paths = await MediaPickerDialog.show(
+      context,
+      title: 'Import Preset (.irispreset or JSON)',
+      initialFilter: FileFilterMode.allFiles,
+      allowMultiple: false,
+    );
+    if (paths != null && paths.isNotEmpty) {
+      final ok = await controller.importPresetFromFile(paths.first);
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(ok ? 'Preset imported successfully!' : 'Failed to import preset: Invalid or corrupted schema'),
+            backgroundColor: ok ? IrisTheme.accentGreen : IrisTheme.accentRed,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildMasterInspector(BuildContext context) {
@@ -2792,42 +3447,75 @@ class _VideoWorkspaceState extends State<VideoWorkspace> {
 class _TimelinePreviewPainter extends CustomPainter {
   final double playheadSeconds;
   final List<SubtitleItemModel> subtitles;
+  final VideoPreviewState previewState;
+  final ui.Image? programImage;
+  final ui.Image? sourceImage;
+  final bool isSourcePreview;
+  final bool isDiagnosticsDemo;
+  final String? errorMessage;
 
   _TimelinePreviewPainter({
     required this.playheadSeconds,
     this.subtitles = const [],
+    this.previewState = VideoPreviewState.empty,
+    this.programImage,
+    this.sourceImage,
+    this.isSourcePreview = false,
+    this.isDiagnosticsDemo = false,
+    this.errorMessage,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint();
+    final activeImage = isSourcePreview ? sourceImage : programImage;
 
-    // Draw dynamic SMPTE color bars
-    final colors = [
-      const Color(0xFFEBEBEB),
-      const Color(0xFFDBDB10),
-      const Color(0xFF10DBDB),
-      const Color(0xFF10DB10),
-      const Color(0xFFDB10DB),
-      const Color(0xFFDB1010),
-      const Color(0xFF1010DB),
-    ];
-
-    final barWidth = size.width / colors.length;
-    for (int i = 0; i < colors.length; i++) {
-      paint.color = colors[i];
-      canvas.drawRect(
-        Rect.fromLTWH(i * barWidth, 0, barWidth, size.height * 0.75),
-        paint,
-      );
+    if (isDiagnosticsDemo) {
+      _paintDiagnosticsDemo(canvas, size);
+    } else if (activeImage != null) {
+      _paintDecodedFrame(canvas, size, activeImage);
+    } else {
+      switch (previewState) {
+        case VideoPreviewState.empty:
+          _paintEmptyState(canvas, size);
+          break;
+        case VideoPreviewState.loading:
+          _paintLoadingState(canvas, size);
+          break;
+        case VideoPreviewState.error:
+          _paintErrorState(canvas, size);
+          break;
+        case VideoPreviewState.ready:
+          canvas.drawRect(
+            Rect.fromLTWH(0, 0, size.width, size.height),
+            Paint()..color = const Color(0xFF101216),
+          );
+          break;
+      }
     }
 
-    // Bottom gradient bar
-    paint.color = const Color(0xFF181C24);
-    canvas.drawRect(
-      Rect.fromLTWH(0, size.height * 0.75, size.width, size.height * 0.25),
-      paint,
-    );
+    // Source Preview monitor badge overlay
+    if (isSourcePreview) {
+      final badgeText = TextPainter(
+        text: const TextSpan(
+          text: 'SOURCE MONITOR PREVIEW',
+          style: TextStyle(
+            color: IrisTheme.primaryCyan,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.8,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(12, 12, badgeText.width + 12, badgeText.height + 6),
+          const Radius.circular(3),
+        ),
+        Paint()..color = Colors.black.withValues(alpha: 0.85),
+      );
+      badgeText.paint(canvas, const Offset(18, 15));
+    }
 
     // Render active subtitle overlay if present
     for (final sub in subtitles) {
@@ -2837,8 +3525,11 @@ class _TimelinePreviewPainter extends CustomPainter {
             text: sub.text,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 12,
+              fontSize: 13,
               fontWeight: FontWeight.w600,
+              shadows: [
+                Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.black),
+              ],
             ),
           ),
           textDirection: TextDirection.ltr,
@@ -2861,10 +3552,104 @@ class _TimelinePreviewPainter extends CustomPainter {
     }
   }
 
+  void _paintDecodedFrame(Canvas canvas, Size size, ui.Image image) {
+    final src = Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
+    final double imgAspect = image.width / image.height;
+    final double viewAspect = size.width / size.height;
+    Rect dst;
+    if (imgAspect > viewAspect) {
+      final double h = size.width / imgAspect;
+      dst = Rect.fromLTWH(0, (size.height - h) / 2, size.width, h);
+    } else {
+      final double w = size.height * imgAspect;
+      dst = Rect.fromLTWH((size.width - w) / 2, 0, w, size.height);
+    }
+    // Letterbox / Pillarbox black background
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), Paint()..color = Colors.black);
+    // Draw decoded frame
+    canvas.drawImageRect(image, src, dst, Paint()..filterQuality = FilterQuality.medium);
+  }
+
+  void _paintEmptyState(Canvas canvas, Size size) {
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), Paint()..color = const Color(0xFF0D0F14));
+    final p = Paint()
+      ..color = const Color(0xFF1E2430)
+      ..strokeWidth = 1.0;
+    canvas.drawLine(Offset(size.width / 2 - 20, size.height / 2), Offset(size.width / 2 + 20, size.height / 2), p);
+    canvas.drawLine(Offset(size.width / 2, size.height / 2 - 20), Offset(size.width / 2, size.height / 2 + 20), p);
+  }
+
+  void _paintLoadingState(Canvas canvas, Size size) {
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), Paint()..color = const Color(0xFF0D0F14));
+    final tp = TextPainter(
+      text: const TextSpan(
+        text: 'DECODING FRAME...',
+        style: TextStyle(color: IrisTheme.primaryCyan, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset((size.width - tp.width) / 2, (size.height - tp.height) / 2));
+  }
+
+  void _paintErrorState(Canvas canvas, Size size) {
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), Paint()..color = const Color(0xFF160A0A));
+    final tp = TextPainter(
+      text: TextSpan(
+        text: errorMessage ?? 'MEDIA DECODE ERROR',
+        style: const TextStyle(color: IrisTheme.accentRed, fontSize: 11, fontWeight: FontWeight.w600),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: size.width - 32);
+    tp.paint(canvas, Offset((size.width - tp.width) / 2, (size.height - tp.height) / 2));
+  }
+
+  void _paintDiagnosticsDemo(Canvas canvas, Size size) {
+    final paint = Paint();
+    final colors = [
+      const Color(0xFFEBEBEB),
+      const Color(0xFFDBDB10),
+      const Color(0xFF10DBDB),
+      const Color(0xFF10DB10),
+      const Color(0xFFDB10DB),
+      const Color(0xFFDB1010),
+      const Color(0xFF1010DB),
+    ];
+
+    final barWidth = size.width / colors.length;
+    for (int i = 0; i < colors.length; i++) {
+      paint.color = colors[i];
+      canvas.drawRect(
+        Rect.fromLTWH(i * barWidth, 0, barWidth, size.height * 0.75),
+        paint,
+      );
+    }
+
+    paint.color = const Color(0xFF181C24);
+    canvas.drawRect(
+      Rect.fromLTWH(0, size.height * 0.75, size.width, size.height * 0.25),
+      paint,
+    );
+
+    final tp = TextPainter(
+      text: const TextSpan(
+        text: 'SMPTE COLOR BAR TEST PATTERN (DEMO / DIAGNOSTICS)',
+        style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.8),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset((size.width - tp.width) / 2, size.height * 0.85));
+  }
+
   @override
   bool shouldRepaint(covariant _TimelinePreviewPainter oldDelegate) =>
       oldDelegate.playheadSeconds != playheadSeconds ||
-      oldDelegate.subtitles != subtitles;
+      oldDelegate.subtitles != subtitles ||
+      oldDelegate.previewState != previewState ||
+      oldDelegate.programImage != programImage ||
+      oldDelegate.sourceImage != sourceImage ||
+      oldDelegate.isSourcePreview != isSourcePreview ||
+      oldDelegate.isDiagnosticsDemo != isDiagnosticsDemo ||
+      oldDelegate.errorMessage != errorMessage;
 }
 
 class _TimelineRulerPainter extends CustomPainter {

@@ -16,7 +16,7 @@ pub use gpu_pipeline::{
 pub use multicam_view::{render_multicam_grid, MultiCamAngleView};
 pub use preview::PreviewEngine;
 pub use scopes::{render_rgb_parade, render_vectorscope, render_waveform};
-pub use source::{MockSourceResolver, SourceResolver};
+pub use source::{MockSourceResolver, RealSourceResolver, SourceResolver};
 pub use subtitles::render_subtitles_on_frame;
 pub use titles::{render_motion_title, TitleTemplate};
 pub use transition::render_transition;

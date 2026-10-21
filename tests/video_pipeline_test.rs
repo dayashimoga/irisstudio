@@ -1,7 +1,11 @@
 use iris_core::{Dimensions, PixelFormat, RationalTime, TimeSpan};
+use iris_effects::{calculate_auto_enhance, Preset, PresetKind};
 use iris_export::{ExportPreset, StreamCopyOptimizer, StreamProcessingMode};
-use iris_media::VideoFrame;
-use iris_render::{render_subtitles_on_frame, render_transition, Compositor, MockSourceResolver};
+use iris_media::{RealMediaDecoder, VideoFrame};
+use iris_render::{
+    render_subtitles_on_frame, render_transition, Compositor, MockSourceResolver,
+    RealSourceResolver,
+};
 use iris_timeline::{
     interpolate_keyframes, Clip, Easing, Keyframe, SubtitleAlignment, SubtitleItem, SubtitleStyle,
     SubtitleTrack, Timeline, Track, TrackKind, Transition, TransitionKind,
@@ -267,4 +271,88 @@ fn test_stream_copy_optimizer() {
     // 10s out of 20s = 50% stream copy
     assert!((plan.stream_copy_percentage - 50.0).abs() < 1.0);
     assert!(plan.estimated_speedup > 10.0);
+}
+
+#[test]
+fn test_real_video_decode_and_source_resolver_composition() {
+    let mp4_path = "tests/fixtures/test_video_360p.mp4";
+    if std::path::Path::new(mp4_path).exists() {
+        // 1. Probe real MP4
+        let probe = RealMediaDecoder::probe_file(mp4_path);
+        assert!(probe.is_valid);
+        assert_eq!(probe.width, 640);
+        assert_eq!(probe.height, 360);
+        assert!(probe.has_video);
+        assert!(probe.has_audio);
+        assert!(probe.duration_seconds >= 3.8);
+
+        // 2. Decode real video frame
+        let frame_res =
+            RealMediaDecoder::decode_video_frame(mp4_path, RationalTime::new(1, 2), None);
+        assert!(frame_res.is_ok());
+        let frame = frame_res.unwrap();
+        assert_eq!(frame.dimensions.width, 640);
+        assert_eq!(frame.dimensions.height, 360);
+        assert_eq!(frame.data.len(), 640 * 360 * 4);
+
+        // 3. Test RealSourceResolver in Compositor
+        let resolver = RealSourceResolver::new();
+        resolver.register_asset("clip_real_asset_1", mp4_path);
+
+        let mut timeline = Timeline::new("tl_real_test", 30, 1);
+        let mut track = Track::new("trk_v_real", "Video Real", TrackKind::Video);
+        let clip = Clip::new(
+            "clip_1",
+            "clip_real_asset_1",
+            "Test 360p Clip",
+            TimeSpan::new(RationalTime::ZERO, RationalTime::new(4, 1)),
+            RationalTime::ZERO,
+        );
+        track.clips.push(clip);
+        timeline.tracks.push(track);
+
+        let compositor = Compositor::new(Dimensions::new(640, 360));
+        let comp_frame = compositor.render_frame(&timeline, RationalTime::new(1, 1), &resolver);
+        assert!(comp_frame.is_ok());
+        let cf = comp_frame.unwrap();
+        assert_eq!(cf.dimensions.width, 640);
+        assert_eq!(cf.dimensions.height, 360);
+        assert_eq!(cf.data.len(), 640 * 360 * 4);
+    }
+}
+
+#[test]
+fn test_preset_engine_and_auto_enhance() {
+    // 1. Video Looks
+    let video_looks = Preset::builtin_video_looks();
+    assert_eq!(video_looks.len(), 15);
+    let cinema_warm = video_looks
+        .iter()
+        .find(|l| l.name == "Cinema Warm")
+        .unwrap();
+    assert_eq!(cinema_warm.kind, PresetKind::LookPreset);
+    assert!(cinema_warm.adjustments.contrast > 0.0);
+    assert!(cinema_warm.lut_intensity > 0.5);
+
+    let sports = video_looks
+        .iter()
+        .find(|l| l.name == "Sports/Action")
+        .unwrap();
+    assert!(sports.adjustments.vibrance >= 20.0);
+
+    // Blending
+    let half_sports = sports.blend_with_intensity(0.5);
+    assert!((half_sports.adjustments.vibrance - sports.adjustments.vibrance * 0.5).abs() < 1e-4);
+
+    // 2. Photo Presets
+    let photo_presets = Preset::builtin_photo_presets();
+    assert_eq!(photo_presets.len(), 15);
+    for p in &photo_presets {
+        assert!(p.validate().is_ok());
+    }
+
+    // 3. Auto Enhance on solid gray
+    let gray_pixels = vec![128u8; 64 * 64 * 4];
+    let auto_adj = calculate_auto_enhance(&gray_pixels, 64, 64);
+    assert!(auto_adj.exposure.abs() < 1.0);
 }

@@ -72,6 +72,14 @@
 - **REQ-EXP-03**: Export Queue: Background execution with progress percentage, rendered frames, average FPS, estimated remaining time, and cancellation support.
 - **REQ-EXP-04**: Post-Export Verification: Re-opens generated media, verifies container headers, stream duration, dimensions, and decode integrity before notifying success.
 
+### 3.6 Look Presets, Project Templates & Auto Adjust Engine
+- **REQ-PST-01**: Strongly-typed Rust preset engine separating Look Presets, Project Templates, and Export Presets.
+- **REQ-PST-02**: Built-in Video Looks: 15 tested, non-destructive configurations (Natural, Cinema Neutral, Cinema Warm, Cinema Cool, Film-Inspired, Documentary, Sports/Action, Travel, Landscape, Portrait/Interview, Product, Food, Night/Low-Light, Vintage, Black & White).
+- **REQ-PST-03**: Built-in Photo Presets: 15 creative presets with full manual parameter overrides.
+- **REQ-PST-04**: AI & Content-Aware Photo Auto Enhance: Statistical luminance, Gray-World balance, and dynamic highlight/shadow recovery.
+- **REQ-PST-05**: Custom Presets & Portability: User look creation, duplicate, favorite, export/import `.irispreset`, offline schema sanitization.
+- **REQ-PST-06**: Atomic Preset Application: Applied as 1 undoable action; manual slider adjustments flag "Preset Name — Modified"; intensity blending 0% to 100%.
+
 ---
 
 ## 4. Non-Functional Requirements

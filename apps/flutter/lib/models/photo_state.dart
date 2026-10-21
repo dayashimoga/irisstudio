@@ -147,6 +147,27 @@ class PhotoAdjustments {
         'saturation': saturation,
         'vibrance': vibrance,
       };
+
+  factory PhotoAdjustments.fromJson(Map<String, dynamic> json) {
+    return PhotoAdjustments(
+      exposure: (json['exposure'] as num?)?.toDouble() ?? 0.0,
+      contrast: (json['contrast'] as num?)?.toDouble() ?? 0.0,
+      temperature: (json['temperature'] as num?)?.toDouble() ?? 0.0,
+      tint: (json['tint'] as num?)?.toDouble() ?? 0.0,
+      highlights: (json['highlights'] as num?)?.toDouble() ?? 0.0,
+      shadows: (json['shadows'] as num?)?.toDouble() ?? 0.0,
+      saturation: (json['saturation'] as num?)?.toDouble() ?? 0.0,
+      vibrance: (json['vibrance'] as num?)?.toDouble() ?? 0.0,
+      sharpening: (json['sharpening'] as num?)?.toDouble() ?? 0.0,
+      blur: (json['blur'] as num?)?.toDouble() ?? 0.0,
+      vignette: (json['vignette'] as num?)?.toDouble() ?? 0.0,
+      denoise: (json['denoise'] as num?)?.toDouble() ?? 0.0,
+      levelsInBlack: (json['levelsInBlack'] as num?)?.toDouble() ?? 0.0,
+      levelsGamma: (json['levelsGamma'] as num?)?.toDouble() ?? 1.0,
+      levelsInWhite: (json['levelsInWhite'] as num?)?.toDouble() ?? 255.0,
+      lensK1: (json['lensK1'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
 }
 
 enum AspectRatioPreset {

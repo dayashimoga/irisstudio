@@ -8,4 +8,5 @@ license.workspace = true
 iris_core = { path = "../core" }
 rayon = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }

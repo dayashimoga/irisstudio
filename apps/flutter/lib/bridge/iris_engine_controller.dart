@@ -8,11 +8,14 @@ import 'package:flutter/foundation.dart';
 import '../models/export_job.dart';
 import '../models/media_item.dart';
 import '../models/photo_state.dart';
+import '../models/preset_model.dart';
 import '../models/project_model.dart';
 import '../models/recent_project_item.dart';
 import 'iris_ffi_bindings.dart';
 
 enum ActiveWorkspace { home, photo, video, export }
+
+enum VideoPreviewState { empty, loading, ready, error }
 
 class IrisEngineController extends ChangeNotifier {
   ActiveWorkspace _currentWorkspace = ActiveWorkspace.home;
@@ -27,6 +30,50 @@ class IrisEngineController extends ChangeNotifier {
 
   bool _isDirty = false;
   bool get isDirty => _isDirty;
+
+  // Video Preview & Render Engine State
+  VideoPreviewState _videoPreviewState = VideoPreviewState.empty;
+  VideoPreviewState get videoPreviewState => _videoPreviewState;
+
+  String? _videoPreviewError;
+  String? get videoPreviewError => _videoPreviewError;
+
+  ui.Image? _programPreviewImage;
+  ui.Image? get programPreviewImage => _programPreviewImage;
+
+  ui.Image? _sourcePreviewImage;
+  ui.Image? get sourcePreviewImage => _sourcePreviewImage;
+
+  bool _isSourcePreviewActive = false;
+  bool get isSourcePreviewActive => _isSourcePreviewActive;
+
+  bool _diagnosticsDemoMode = false;
+  bool get diagnosticsDemoMode => _diagnosticsDemoMode;
+
+  int _seekGenerationId = 0;
+
+  // Presets & Color Look State
+  final List<PresetModel> _videoPresets = [];
+  List<PresetModel> get videoPresets => List.unmodifiable(_videoPresets);
+
+  final List<PresetModel> _photoPresets = [];
+  List<PresetModel> get photoPresets => List.unmodifiable(_photoPresets);
+
+  PresetModel? _activePreset;
+  PresetModel? get activePreset => _activePreset;
+
+  double _presetIntensity = 1.0;
+  double get presetIntensity => _presetIntensity;
+
+  bool _isPresetModified = false;
+  bool get isPresetModified => _isPresetModified;
+
+  String? get activePresetLabel => _activePreset == null
+      ? null
+      : (_isPresetModified ? '${_activePreset!.name} — Modified' : _activePreset!.name);
+
+  final Set<String> _favoritePresetIds = {};
+  Set<String> get favoritePresetIds => _favoritePresetIds;
 
   // Media Bin (Project Asset Pool)
   final List<MediaItem> _mediaBin = [];
@@ -165,6 +212,7 @@ class IrisEngineController extends ChangeNotifier {
     }
     _refreshHardware();
     _checkCrashRecovery();
+    _loadPresets();
   }
 
   void _refreshHardware() {
@@ -212,6 +260,12 @@ class IrisEngineController extends ChangeNotifier {
     _project = _createEmptyProject(name: name, type: type);
     _currentProjectFilePath = null;
     _isDirty = false;
+    _videoPreviewState = VideoPreviewState.empty;
+    _videoPreviewError = null;
+    _programPreviewImage = null;
+    _sourcePreviewImage = null;
+    _isSourcePreviewActive = false;
+    _diagnosticsDemoMode = false;
     _mediaBin.clear();
     _selectedMediaItem = null;
     _selectedClip = null;
@@ -236,6 +290,8 @@ class IrisEngineController extends ChangeNotifier {
     _project = _createDemoProject();
     _currentProjectFilePath = null;
     _isDirty = false;
+    _diagnosticsDemoMode = true;
+    _videoPreviewState = VideoPreviewState.ready;
     _mediaBin.clear();
 
     // Populate Media Bin with references to showcase demo assets
@@ -429,9 +485,266 @@ class IrisEngineController extends ChangeNotifier {
   }
 
   // =========================================================================
-  // Media Bin (Asset Ingestion, Relinking, Probe)
+  // Media Ingestion, Video Loading & Timeline Sequencing
   // =========================================================================
 
+  Future<ui.Image?> _convertPixelsToUiImage(Uint8List pixels, int width, int height) {
+    final completer = Completer<ui.Image?>();
+    try {
+      ui.decodeImageFromPixels(
+        pixels,
+        width,
+        height,
+        ui.PixelFormat.rgba8888,
+        (image) {
+          completer.complete(image);
+        },
+      );
+    } catch (e) {
+      completer.complete(null);
+    }
+    return completer.future;
+  }
+
+  Future<void> _decodeProgramFrameAtPlayhead() async {
+    final currentGen = ++_seekGenerationId;
+    if (_project.tracks.isEmpty) {
+      _videoPreviewState = VideoPreviewState.empty;
+      _programPreviewImage = null;
+      notifyListeners();
+      return;
+    }
+
+    // Find active top video clip under playhead
+    ClipModel? activeClip;
+    MediaItem? activeMedia;
+    for (final track in _project.tracks.reversed) {
+      if (track.kind == TrackKindModel.video && !track.isMuted) {
+        for (final clip in track.clips) {
+          if (_playheadSeconds >= clip.timelineStart &&
+              _playheadSeconds <= clip.timelineStart + clip.duration) {
+            activeClip = clip;
+            activeMedia = _mediaBin.firstWhere(
+              (m) => m.id == clip.assetId,
+              orElse: () => MediaItem.empty(),
+            );
+            break;
+          }
+        }
+        if (activeClip != null) break;
+      }
+    }
+
+    if (activeClip == null || activeMedia == null || activeMedia.filePath.isEmpty) {
+      if (_programPreviewImage == null) {
+        _videoPreviewState = VideoPreviewState.empty;
+      }
+      notifyListeners();
+      return;
+    }
+
+    final file = File(activeMedia.filePath);
+    if (!file.existsSync()) {
+      _videoPreviewState = VideoPreviewState.error;
+      _videoPreviewError = 'Source media file missing: ${activeMedia.fileName}';
+      notifyListeners();
+      return;
+    }
+
+    final clipRelativeTime = (_playheadSeconds - activeClip.timelineStart).clamp(0.0, activeClip.duration);
+    final targetW = 640;
+    final targetH = 360;
+
+    final decoded = IrisFfiBindings.decodeVideoFrame(
+      filePath: activeMedia.filePath,
+      timeSecs: clipRelativeTime,
+      targetW: targetW,
+      targetH: targetH,
+    );
+
+    if (currentGen != _seekGenerationId) {
+      return;
+    }
+
+    if (decoded != null) {
+      final img = await _convertPixelsToUiImage(decoded.pixels, decoded.width, decoded.height);
+      if (currentGen == _seekGenerationId && img != null) {
+        _programPreviewImage = img;
+        _videoPreviewState = VideoPreviewState.ready;
+        _videoPreviewError = null;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> _decodeSourceFrameForMedia(MediaItem item) async {
+    final currentGen = ++_seekGenerationId;
+    if (item.filePath.isEmpty || !File(item.filePath).existsSync()) {
+      _sourcePreviewImage = null;
+      notifyListeners();
+      return;
+    }
+    final targetW = 640;
+    final targetH = 360;
+
+    final decoded = IrisFfiBindings.decodeVideoFrame(
+      filePath: item.filePath,
+      timeSecs: 0.0,
+      targetW: targetW,
+      targetH: targetH,
+    );
+
+    if (currentGen != _seekGenerationId) return;
+
+    if (decoded != null) {
+      final img = await _convertPixelsToUiImage(decoded.pixels, decoded.width, decoded.height);
+      if (currentGen == _seekGenerationId && img != null) {
+        _sourcePreviewImage = img;
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Opens a video file, creates a source-matched project sequence, inserts linked video/audio tracks,
+  /// fits timeline, and decodes the first real frame into preview without synthetic color bars.
+  Future<bool> openVideoFile(String filePath) async {
+    pause();
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        _videoPreviewState = VideoPreviewState.error;
+        _videoPreviewError = 'File does not exist: $filePath';
+        notifyListeners();
+        return false;
+      }
+
+      _videoPreviewState = VideoPreviewState.loading;
+      _videoPreviewError = null;
+      notifyListeners();
+
+      final probe = IrisFfiBindings.probeMedia(filePath);
+      if (!probe.isValid) {
+        _videoPreviewState = VideoPreviewState.error;
+        _videoPreviewError = probe.error ?? 'Unsupported or corrupt video file: $filePath';
+        notifyListeners();
+        return false;
+      }
+
+      // 1. Create a clean source-matched project sequence
+      final fps = probe.fps > 0 ? probe.fps.round() : 30;
+      final width = probe.width > 0 ? probe.width : 1920;
+      final height = probe.height > 0 ? probe.height : 1080;
+      final duration = probe.durationSeconds > 0 ? probe.durationSeconds : 5.0;
+
+      final safeName = filePath.split(Platform.pathSeparator).last;
+      final projName = safeName.contains('.')
+          ? safeName.substring(0, safeName.lastIndexOf('.'))
+          : safeName;
+
+      _project = ProjectModel(
+        id: 'prj_${DateTime.now().millisecondsSinceEpoch}',
+        name: projName,
+        width: width,
+        height: height,
+        fps: fps,
+        tracks: [],
+      );
+      _currentProjectFilePath = null;
+      _isDirty = true;
+      _diagnosticsDemoMode = false;
+      _mediaBin.clear();
+      _selectedClip = null;
+      _playheadSeconds = 0.0;
+
+      // 2. Extract real video thumbnail & audio waveform
+      Uint8List? thumb;
+      final firstFrame = IrisFfiBindings.decodeVideoFrame(
+        filePath: filePath,
+        timeSecs: 0.0,
+        targetW: 320,
+        targetH: 180,
+      );
+      if (firstFrame != null) {
+        thumb = firstFrame.pixels;
+      }
+
+      final peaks = IrisFfiBindings.extractMediaWaveform(filePath, maxPeaks: 128);
+
+      final mediaItem = MediaItem.fromProbe(
+        id: 'asset_vid_${DateTime.now().millisecondsSinceEpoch}',
+        filePath: filePath,
+        probe: probe,
+        thumbnailBytes: thumb,
+      );
+      mediaItem.waveformPeaks = peaks;
+
+      _mediaBin.add(mediaItem);
+      _selectedMediaItem = mediaItem;
+
+      // 3. Create linked Video and Audio tracks
+      final videoTrack = TrackModel(
+        id: 'trk_v1',
+        name: 'Video 1',
+        kind: TrackKindModel.video,
+        clips: [],
+      );
+      final videoClip = ClipModel(
+        id: 'clip_v1',
+        assetId: mediaItem.id,
+        name: mediaItem.fileName,
+        timelineStart: 0.0,
+        duration: duration,
+      );
+      videoTrack.clips.add(videoClip);
+      _project.tracks.add(videoTrack);
+
+      if (probe.channels > 0) {
+        final audioTrack = TrackModel(
+          id: 'trk_a1',
+          name: 'Audio 1 (Master)',
+          kind: TrackKindModel.audio,
+          clips: [],
+        );
+        final audioClip = ClipModel(
+          id: 'clip_a1',
+          assetId: mediaItem.id,
+          name: '${mediaItem.fileName} (Audio)',
+          timelineStart: 0.0,
+          duration: duration,
+        );
+        audioTrack.clips.add(audioClip);
+        _project.tracks.add(audioTrack);
+      }
+
+      _selectedClip = videoClip;
+
+      // 4. Decode real first frame for preview
+      if (firstFrame != null) {
+        final uiImg = await _convertPixelsToUiImage(
+          firstFrame.pixels,
+          firstFrame.width,
+          firstFrame.height,
+        );
+        _programPreviewImage = uiImg;
+        _sourcePreviewImage = uiImg;
+        _videoPreviewState = VideoPreviewState.ready;
+      } else {
+        await _decodeProgramFrameAtPlayhead();
+      }
+
+      _currentWorkspace = ActiveWorkspace.video;
+      _recordAction('Opened video: ${mediaItem.fileName}');
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _videoPreviewState = VideoPreviewState.error;
+      _videoPreviewError = 'Failed to open video: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Ingestion: Adds asset to Media Pool without modifying existing sequence or overwriting edits.
   Future<bool> importMediaFile(String filePath) async {
     try {
       final file = File(filePath);
@@ -445,10 +758,19 @@ class IrisEngineController extends ChangeNotifier {
         return false;
       }
 
-      // Generate thumbnail for image files
       Uint8List? thumb;
       if (probe.mediaType == 'photo') {
         final decoded = IrisFfiBindings.decodePhoto(filePath);
+        if (decoded != null) {
+          thumb = decoded.pixels;
+        }
+      } else if (probe.mediaType == 'video') {
+        final decoded = IrisFfiBindings.decodeVideoFrame(
+          filePath: filePath,
+          timeSecs: 0.0,
+          targetW: 160,
+          targetH: 90,
+        );
         if (decoded != null) {
           thumb = decoded.pixels;
         }
@@ -457,17 +779,7 @@ class IrisEngineController extends ChangeNotifier {
       // Extract real audio waveform peaks
       List<double>? peaks;
       if (probe.mediaType == 'audio' || probe.mediaType == 'video') {
-        if (filePath.toLowerCase().endsWith('.wav')) {
-          peaks = IrisFfiBindings.extractWaveformFromWavFile(filePath);
-        }
-        if (peaks == null || peaks.isEmpty) {
-          peaks = IrisFfiBindings.computeWaveformPeaks(
-            samples: [],
-            channels: probe.channels > 0 ? probe.channels : 2,
-            samplesPerPixel: 256,
-            maxPeaks: 128,
-          );
-        }
+        peaks = IrisFfiBindings.extractMediaWaveform(filePath, maxPeaks: 128);
       }
 
       final item = MediaItem.fromProbe(
@@ -481,6 +793,8 @@ class IrisEngineController extends ChangeNotifier {
       _mediaBin.add(item);
       _selectedMediaItem = item;
       _isDirty = true;
+
+      _decodeSourceFrameForMedia(item);
 
       // If user is in Photo workspace and no photo is currently open, load this photo immediately
       if (_currentWorkspace == ActiveWorkspace.photo && _rawPhotoPixels == null && item.mediaType == MediaType.photo) {
@@ -499,21 +813,7 @@ class IrisEngineController extends ChangeNotifier {
   List<double>? getWaveformPeaksForClip(ClipModel clip) {
     final item = _mediaBin.firstWhere(
       (m) => m.id == clip.assetId,
-      orElse: () => MediaItem(
-        id: '',
-        filePath: '',
-        fileName: '',
-        mediaType: MediaType.unknown,
-        format: '',
-        width: 0,
-        height: 0,
-        fps: 0,
-        durationSeconds: 0,
-        channels: 0,
-        sampleRate: 0,
-        codecName: '',
-        fileSizeBytes: 0,
-      ),
+      orElse: () => MediaItem.empty(),
     );
     return item.waveformPeaks;
   }
@@ -546,6 +846,13 @@ class IrisEngineController extends ChangeNotifier {
 
   void selectMediaItem(MediaItem? item) {
     _selectedMediaItem = item;
+    if (item != null) {
+      _isSourcePreviewActive = true;
+      _decodeSourceFrameForMedia(item);
+    } else {
+      _sourcePreviewImage = null;
+      _isSourcePreviewActive = false;
+    }
     notifyListeners();
   }
 
@@ -587,6 +894,7 @@ class IrisEngineController extends ChangeNotifier {
     track.clips.add(clip);
     _selectedClip = clip;
     _isDirty = true;
+    _decodeProgramFrameAtPlayhead();
     _recordAction('Added ${item.fileName} to timeline');
     notifyListeners();
   }
@@ -710,6 +1018,7 @@ class IrisEngineController extends ChangeNotifier {
       _photoRedoStack.clear();
     }
     _photoAdjustments = newAdjustments;
+    markPresetModified();
     _isDirty = true;
     _applyPhotoPipeline();
     notifyListeners();
@@ -767,13 +1076,18 @@ class IrisEngineController extends ChangeNotifier {
     if (_project.totalDuration <= 0.0) return;
     _isPlaying = true;
     _playbackTimer?.cancel();
+    int frameTick = 0;
     _playbackTimer = Timer.periodic(const Duration(milliseconds: 33), (timer) {
       _playheadSeconds += 0.033;
+      frameTick++;
       if (_playheadSeconds >= _project.totalDuration) {
         _playheadSeconds = _project.totalDuration;
         pause();
       }
       _updateAudioMeters();
+      if (frameTick % 2 == 0) {
+        _decodeProgramFrameAtPlayhead();
+      }
       notifyListeners();
     });
     notifyListeners();
@@ -793,6 +1107,7 @@ class IrisEngineController extends ChangeNotifier {
     _playheadSeconds = seconds.clamp(0.0, _project.totalDuration > 0 ? _project.totalDuration : 0.0);
     if (!_isPlaying) {
       _updateAudioMeters();
+      _decodeProgramFrameAtPlayhead();
     }
     notifyListeners();
   }
@@ -1016,52 +1331,319 @@ class IrisEngineController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void applyPresetFilter(String presetName) {
-    _recordAction('Applied preset $presetName');
-    switch (presetName) {
-      case 'Vivid Landscape':
-        _photoAdjustments = _photoAdjustments.copyWith(
-          contrast: 18.0,
-          vibrance: 28.0,
-          saturation: 10.0,
-          highlights: -12.0,
-          shadows: 15.0,
-          sharpening: 35.0,
-        );
-        break;
-      case 'Cinematic Teal/Orange':
-        _photoAdjustments = _photoAdjustments.copyWith(
-          temperature: 15.0,
-          tint: -8.0,
-          contrast: 22.0,
-          shadows: -10.0,
-          vignette: 25.0,
-        );
-        break;
-      case 'B&W Contrast':
-        _photoAdjustments = _photoAdjustments.copyWith(
-          saturation: -100.0,
-          vibrance: -100.0,
-          contrast: 35.0,
-          exposure: 0.2,
-          sharpening: 40.0,
-        );
-        break;
-      case 'Warm Vintage':
-        _photoAdjustments = _photoAdjustments.copyWith(
-          temperature: 25.0,
-          exposure: 0.15,
-          contrast: -8.0,
-          shadows: 20.0,
-          vignette: 30.0,
-        );
-        break;
-      default:
-        _photoAdjustments.reset();
-    }
-    _isDirty = true;
-    _applyPhotoPipeline();
+  void setSourcePreviewActive(bool active) {
+    _isSourcePreviewActive = active;
     notifyListeners();
+  }
+
+  void setDiagnosticsDemoMode(bool enable) {
+    _diagnosticsDemoMode = enable;
+    notifyListeners();
+  }
+
+  Future<void> _loadPresets() async {
+    _videoPresets.clear();
+    _photoPresets.clear();
+
+    _videoPresets.addAll(IrisFfiBindings.getBuiltinVideoLooks());
+    _photoPresets.addAll(IrisFfiBindings.getBuiltinPhotoPresets());
+
+    await _loadCustomPresets();
+    notifyListeners();
+  }
+
+  void applyPreset(PresetModel preset, {double intensity = 1.0, bool isVideo = false}) {
+    final blended = IrisFfiBindings.blendPreset(preset, intensity);
+
+    if (isVideo) {
+      if (_selectedClip != null) {
+        _isDirty = true;
+      }
+    } else {
+      _photoUndoStack.add(_photoAdjustments.copyWith());
+      _photoRedoStack.clear();
+
+      _photoAdjustments = blended.adjustments.copyWith();
+      _applyPhotoPipeline();
+    }
+
+    _activePreset = preset;
+    _presetIntensity = intensity;
+    _isPresetModified = false;
+    _recordAction('Applied preset: ${preset.name} (${(intensity * 100).round()}%)');
+    notifyListeners();
+  }
+
+  void applyPresetFilter(String presetName) {
+    final found = _photoPresets.firstWhere(
+      (p) => p.name.toLowerCase() == presetName.toLowerCase(),
+      orElse: () => PresetModel(
+        id: 'filter_${DateTime.now().millisecondsSinceEpoch}',
+        name: presetName,
+        category: 'Creative',
+        kind: PresetKindModel.photo,
+        adjustments: PhotoAdjustments(contrast: 0.15, saturation: 0.1),
+      ),
+    );
+    applyPreset(found, intensity: 1.0, isVideo: false);
+  }
+
+  void setPresetIntensity(double intensity, {bool isVideo = false}) {
+    _presetIntensity = intensity.clamp(0.0, 1.0);
+    if (_activePreset != null) {
+      final blended = IrisFfiBindings.blendPreset(_activePreset!, _presetIntensity);
+      if (!isVideo) {
+        _photoAdjustments = blended.adjustments.copyWith();
+        _applyPhotoPipeline();
+      }
+    }
+    notifyListeners();
+  }
+
+  void resetPreset({bool isVideo = false}) {
+    if (!isVideo) {
+      _photoUndoStack.add(_photoAdjustments.copyWith());
+      _photoRedoStack.clear();
+      _photoAdjustments.reset();
+      _applyPhotoPipeline();
+    }
+    _activePreset = null;
+    _presetIntensity = 1.0;
+    _isPresetModified = false;
+    _recordAction('Reset look adjustments to neutral');
+    notifyListeners();
+  }
+
+  void markPresetModified() {
+    if (!_isPresetModified) {
+      _isPresetModified = true;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> runPhotoAutoEnhance() async {
+    if (_rawPhotoPixels == null || _photoWidth == 0 || _photoHeight == 0) {
+      return false;
+    }
+
+    final proposed = IrisFfiBindings.autoEnhancePhoto(
+      pixels: _rawPhotoPixels!,
+      width: _photoWidth,
+      height: _photoHeight,
+    );
+
+    if (proposed != null) {
+      _photoUndoStack.add(_photoAdjustments.copyWith());
+      _photoRedoStack.clear();
+
+      _photoAdjustments = proposed;
+      await _applyPhotoPipeline();
+
+      _activePreset = PresetModel(
+        id: 'photo_auto_enhance',
+        name: 'Auto Enhance',
+        category: 'Smart',
+        description: 'Dynamic content-aware exposure, contrast, and color balance',
+        kind: PresetKindModel.photo,
+        adjustments: proposed,
+        isBuiltin: true,
+      );
+      _presetIntensity = 1.0;
+      _isPresetModified = false;
+
+      _recordAction('Applied Auto Enhance');
+      notifyListeners();
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> saveCustomPreset({
+    required String name,
+    required String category,
+    String description = '',
+    required bool isVideo,
+  }) async {
+    final id = 'custom_${DateTime.now().millisecondsSinceEpoch}';
+    final custom = PresetModel(
+      id: id,
+      name: name.trim().isNotEmpty ? name.trim() : 'Custom Look',
+      category: category.trim().isNotEmpty ? category.trim() : 'My Presets',
+      description: description,
+      kind: isVideo ? PresetKindModel.look : PresetKindModel.photo,
+      adjustments: _photoAdjustments.copyWith(),
+      isBuiltin: false,
+    );
+
+    if (isVideo) {
+      _videoPresets.add(custom);
+    } else {
+      _photoPresets.add(custom);
+    }
+
+    _activePreset = custom;
+    _isPresetModified = false;
+    await _persistCustomPresets();
+    _recordAction('Saved custom preset: ${custom.name}');
+    notifyListeners();
+    return true;
+  }
+
+  Future<bool> exportPresetToFile(PresetModel preset, String outputPath) async {
+    try {
+      final jsonStr = const JsonEncoder.withIndent('  ').convert(preset.toJson());
+      final file = File(outputPath);
+      await file.writeAsString(jsonStr, flush: true);
+      _recordAction('Exported preset to: $outputPath');
+      return true;
+    } catch (e) {
+      debugPrint('Error exporting preset: $e');
+      return false;
+    }
+  }
+
+  Future<bool> importPresetFromFile(String filePath) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) return false;
+      final content = await file.readAsString();
+      if (!IrisFfiBindings.validatePresetJson(content)) {
+        return false;
+      }
+      final map = jsonDecode(content) as Map<String, dynamic>;
+      final imported = PresetModel.fromJson(map);
+
+      // Collision protection & user copy
+      final safeCopy = imported.copyWith(
+        id: 'imported_${DateTime.now().millisecondsSinceEpoch}',
+        name: '${imported.name} (Imported)',
+        isBuiltin: false,
+      );
+
+      if (safeCopy.kind == PresetKindModel.photo) {
+        _photoPresets.add(safeCopy);
+      } else {
+        _videoPresets.add(safeCopy);
+      }
+
+      await _persistCustomPresets();
+      _recordAction('Imported preset: ${safeCopy.name}');
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('Error importing preset: $e');
+      return false;
+    }
+  }
+
+  Future<PresetModel> duplicatePreset(PresetModel preset) async {
+    final copy = preset.copyWith(
+      id: 'copy_${DateTime.now().millisecondsSinceEpoch}',
+      name: '${preset.name} (Copy)',
+      isBuiltin: false,
+    );
+    if (preset.kind == PresetKindModel.photo) {
+      _photoPresets.add(copy);
+    } else {
+      _videoPresets.add(copy);
+    }
+    await _persistCustomPresets();
+    notifyListeners();
+    return copy;
+  }
+
+  Future<void> deleteCustomPreset(String id) async {
+    _videoPresets.removeWhere((p) => p.id == id && !p.isBuiltin);
+    _photoPresets.removeWhere((p) => p.id == id && !p.isBuiltin);
+    if (_activePreset?.id == id) {
+      _activePreset = null;
+      _isPresetModified = false;
+    }
+    await _persistCustomPresets();
+    notifyListeners();
+  }
+
+  void toggleFavoritePreset(String id) {
+    if (_favoritePresetIds.contains(id)) {
+      _favoritePresetIds.remove(id);
+    } else {
+      _favoritePresetIds.add(id);
+    }
+    for (final p in _videoPresets) {
+      if (p.id == id) p.isFavorite = _favoritePresetIds.contains(id);
+    }
+    for (final p in _photoPresets) {
+      if (p.id == id) p.isFavorite = _favoritePresetIds.contains(id);
+    }
+    _persistCustomPresets();
+    notifyListeners();
+  }
+
+  Future<void> _persistCustomPresets() async {
+    try {
+      final dir = Directory.current.path;
+      final file = File('$dir${Platform.pathSeparator}.iris_custom_presets.json');
+      final customVideo = _videoPresets.where((p) => !p.isBuiltin).map((p) => p.toJson()).toList();
+      final customPhoto = _photoPresets.where((p) => !p.isBuiltin).map((p) => p.toJson()).toList();
+      final jsonStr = jsonEncode({
+        'video_presets': customVideo,
+        'photo_presets': customPhoto,
+        'favorites': _favoritePresetIds.toList(),
+      });
+      await file.writeAsString(jsonStr, flush: true, mode: FileMode.write);
+    } catch (e) {
+      debugPrint('Error persisting custom presets: $e');
+    }
+  }
+
+  Future<void> _loadCustomPresets() async {
+    try {
+      final dir = Directory.current.path;
+      final file = File('$dir${Platform.pathSeparator}.iris_custom_presets.json');
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        if (content.trim().isEmpty) return;
+        final map = jsonDecode(content);
+        if (map is Map<String, dynamic>) {
+          if (map['video_presets'] is List) {
+            for (final item in map['video_presets']) {
+              if (item is Map<String, dynamic>) {
+                final p = PresetModel.fromJson(item);
+                if (!_videoPresets.any((existing) => existing.id == p.id)) {
+                  _videoPresets.add(p);
+                }
+              }
+            }
+          }
+          if (map['photo_presets'] is List) {
+            for (final item in map['photo_presets']) {
+              if (item is Map<String, dynamic>) {
+                final p = PresetModel.fromJson(item);
+                if (!_photoPresets.any((existing) => existing.id == p.id)) {
+                  _photoPresets.add(p);
+                }
+              }
+            }
+          }
+          if (map['favorites'] is List) {
+            _favoritePresetIds.addAll(List<String>.from(map['favorites']));
+            for (final p in _videoPresets) {
+              p.isFavorite = _favoritePresetIds.contains(p.id);
+            }
+            for (final p in _photoPresets) {
+              p.isFavorite = _favoritePresetIds.contains(p.id);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading custom presets: $e');
+      try {
+        final dir = Directory.current.path;
+        final file = File('$dir${Platform.pathSeparator}.iris_custom_presets.json');
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+    }
   }
 
   // --- Photo Layers Management ---

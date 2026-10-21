@@ -41,6 +41,22 @@ class MediaItem {
     this.waveformPeaks,
   });
 
+  static MediaItem empty() => MediaItem(
+        id: '',
+        filePath: '',
+        fileName: '',
+        mediaType: MediaType.unknown,
+        format: '',
+        width: 0,
+        height: 0,
+        fps: 0,
+        durationSeconds: 0,
+        channels: 0,
+        sampleRate: 0,
+        codecName: '',
+        fileSizeBytes: 0,
+      );
+
   static MediaItem fromProbe({
     required String id,
     required String filePath,

@@ -313,16 +313,46 @@ class _HomeWorkspaceState extends State<HomeWorkspace> {
             ),
           ),
           const SizedBox(width: 24),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('New Project'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: IrisTheme.primaryCyan,
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-            ),
-            onPressed: _showNewProjectDialog,
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ElevatedButton.icon(
+                icon: const Icon(Icons.file_open, size: 18),
+                label: const Text('Open Video / Edit'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: IrisTheme.primaryCyan,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                onPressed: () async {
+                  final paths = await MediaPickerDialog.show(
+                    context,
+                    title: 'Open Video for Immediate Editing',
+                    initialFilter: FileFilterMode.videos,
+                    allowMultiple: false,
+                  );
+                  if (paths != null && paths.isNotEmpty) {
+                    final ok = await widget.controller.openVideoFile(paths.first);
+                    if (ok) {
+                      widget.controller.switchWorkspace(ActiveWorkspace.video);
+                    }
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('New Project'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: IrisTheme.textPrimary,
+                  side: const BorderSide(color: IrisTheme.border),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                onPressed: _showNewProjectDialog,
+              ),
+            ],
           ),
         ],
       ),

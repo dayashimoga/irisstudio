@@ -24,11 +24,11 @@ use iris_images::{
     decode_image, encode_jpeg, encode_png, encode_webp, flip_horizontal, flip_vertical,
     resize_bilinear, rotate_90, straighten_image, RgbaImage,
 };
-use iris_media::{HardwareBackendKind, HardwareDeviceContext, VideoFrame};
+use iris_media::{HardwareBackendKind, HardwareDeviceContext, RealMediaDecoder, VideoFrame};
 use iris_projects::{CrashJournal, Project, UndoRedoManager};
 use iris_render::{
     render_motion_title, render_multicam_grid, render_rgb_parade, render_vectorscope,
-    render_waveform, GpuComputePipeline, MockSourceResolver, MultiCamAngleView, PreviewEngine,
+    render_waveform, GpuComputePipeline, MultiCamAngleView, PreviewEngine, RealSourceResolver,
     TitleTemplate,
 };
 use iris_timeline::{
@@ -46,7 +46,7 @@ pub struct IrisEngine {
     pub project: Project,
     pub undo_manager: UndoRedoManager,
     pub preview_engine: PreviewEngine,
-    pub source_resolver: MockSourceResolver,
+    pub source_resolver: RealSourceResolver,
     pub cache: CacheManager,
 }
 
@@ -106,7 +106,7 @@ pub extern "C" fn iris_engine_create(name: *const c_char) -> *mut IrisEngine {
         project,
         undo_manager: UndoRedoManager::new(100),
         preview_engine: PreviewEngine::new(Dimensions::new(1920, 1080)),
-        source_resolver: MockSourceResolver::default(),
+        source_resolver: RealSourceResolver::new(),
         cache: CacheManager::new(MemoryBudgetTier::DesktopStandard),
     };
 
@@ -120,6 +120,22 @@ pub extern "C" fn iris_engine_free(ptr: *mut IrisEngine) {
             drop(Box::from_raw(ptr));
         }
     }
+}
+
+#[no_mangle]
+pub extern "C" fn iris_engine_register_asset(
+    engine_ptr: *mut IrisEngine,
+    asset_id: *const c_char,
+    file_path: *const c_char,
+) -> c_int {
+    if engine_ptr.is_null() || asset_id.is_null() || file_path.is_null() {
+        return -1;
+    }
+    let engine = unsafe { &mut *engine_ptr };
+    let id_str = unsafe { CStr::from_ptr(asset_id).to_string_lossy().into_owned() };
+    let path_str = unsafe { CStr::from_ptr(file_path).to_string_lossy().into_owned() };
+    engine.source_resolver.register_asset(id_str, path_str);
+    0
 }
 
 #[no_mangle]
@@ -2010,103 +2026,123 @@ pub extern "C" fn iris_media_probe(file_path: *const c_char) -> *mut c_char {
     }
 
     let path_str = unsafe { CStr::from_ptr(file_path).to_string_lossy() };
-    let path = Path::new(path_str.as_ref());
-    if !path.exists() {
-        let err = format!(
-            r#"{{"is_valid":false,"error":"File does not exist: {}"}}"#,
-            path_str
-        );
-        return CString::new(err).unwrap().into_raw();
-    }
-
-    let file_size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    let filename = path
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or("media")
-        .to_string();
-
-    let json_str = match ext.as_str() {
-        "jpg" | "jpeg" | "png" | "webp" | "bmp" => {
-            if let Ok(bytes) = fs::read(path) {
-                if let Ok(img) = decode_image(&bytes) {
-                    format!(
-                        r#"{{"is_valid":true,"media_type":"photo","filename":"{}","format":"{}","width":{},"height":{},"fps":0.0,"duration_seconds":0.0,"channels":4,"sample_rate":0,"codec_name":"{} Image (RGBA)","file_size_bytes":{}}}"#,
-                        filename,
-                        ext,
-                        img.width,
-                        img.height,
-                        ext.to_uppercase(),
-                        file_size
-                    )
-                } else {
-                    r#"{"is_valid":false,"error":"Corrupt or unreadable image file"}"#.to_string()
-                }
-            } else {
-                r#"{"is_valid":false,"error":"Unable to read file"}"#.to_string()
-            }
-        }
-        "wav" => {
-            let (sr, ch, dur) = if let Ok(bytes) = fs::read(path) {
-                if bytes.len() >= 44 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WAVE" {
-                    let channels = u16::from_le_bytes([bytes[22], bytes[23]]) as u32;
-                    let sample_rate =
-                        u32::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]);
-                    let byte_rate =
-                        u32::from_le_bytes([bytes[28], bytes[29], bytes[30], bytes[31]]);
-                    let data_len = if bytes.len() > 44 {
-                        (bytes.len() - 44) as f64
-                    } else {
-                        0.0
-                    };
-                    let duration = if byte_rate > 0 {
-                        data_len / byte_rate as f64
-                    } else {
-                        0.0
-                    };
-                    (sample_rate, channels, duration)
-                } else {
-                    (48000, 2, (file_size as f64) / (48000.0 * 2.0 * 2.0))
-                }
-            } else {
-                (48000, 2, 0.0)
-            };
-            format!(
-                r#"{{"is_valid":true,"media_type":"audio","filename":"{}","format":"wav","width":0,"height":0,"fps":0.0,"duration_seconds":{:.3},"channels":{},"sample_rate":{},"codec_name":"PCM Linear Audio","file_size_bytes":{}}}"#,
-                filename, dur, ch, sr, file_size
-            )
-        }
-        "mp3" | "aac" | "ogg" | "flac" | "m4a" => {
-            let dur = ((file_size as f64) * 8.0) / 192000.0;
-            format!(
-                r#"{{"is_valid":true,"media_type":"audio","filename":"{}","format":"{}","width":0,"height":0,"fps":0.0,"duration_seconds":{:.3},"channels":2,"sample_rate":44100,"codec_name":"{} Audio","file_size_bytes":{}}}"#,
-                filename,
-                ext,
-                dur.max(1.0),
-                ext.to_uppercase(),
-                file_size
-            )
-        }
-        "mp4" | "mov" | "mkv" | "webm" | "avi" => {
-            let est_dur = ((file_size as f64) * 8.0) / 12_000_000.0;
-            let dur = est_dur.clamp(1.0, 7200.0);
-            format!(
-                r#"{{"is_valid":true,"media_type":"video","filename":"{}","format":"{}","width":1920,"height":1080,"fps":30.0,"duration_seconds":{:.3},"channels":2,"sample_rate":48000,"codec_name":"H.264 / AAC","file_size_bytes":{}}}"#,
-                filename, ext, dur, file_size
-            )
-        }
-        _ => {
-            format!(
-                r#"{{"is_valid":false,"error":"Unsupported media format: .{}"}}"#,
-                ext
-            )
-        }
-    };
+    let probe = RealMediaDecoder::probe_file(&path_str);
+    let json_str = serde_json::to_string(&probe).unwrap_or_else(|_| {
+        r#"{"is_valid":false,"error":"Failed to serialize probe info"}"#.to_string()
+    });
 
     CString::new(json_str).unwrap().into_raw()
+}
+
+#[no_mangle]
+pub extern "C" fn iris_video_decode_frame(
+    file_path: *const c_char,
+    time_secs: f64,
+    target_w: u32,
+    target_h: u32,
+    out_pixels: *mut u8,
+    max_bytes: usize,
+) -> c_int {
+    if file_path.is_null() || out_pixels.is_null() {
+        return -1;
+    }
+    let path_str = unsafe { CStr::from_ptr(file_path).to_string_lossy() };
+    let time = RationalTime::from_seconds(time_secs, 1000);
+    let target_dim = if target_w > 0 && target_h > 0 {
+        Some(Dimensions::new(target_w, target_h))
+    } else {
+        None
+    };
+
+    match RealMediaDecoder::decode_video_frame(&path_str, time, target_dim) {
+        Ok(frame) => {
+            if frame.data.len() > max_bytes {
+                return -2;
+            }
+            let dst_slice = unsafe { slice::from_raw_parts_mut(out_pixels, frame.data.len()) };
+            dst_slice.copy_from_slice(&frame.data);
+            0
+        }
+        Err(_) => -3,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn iris_media_extract_waveform_peaks(
+    file_path: *const c_char,
+    max_peaks: usize,
+    out_peaks_ptr: *mut WaveformPeak,
+) -> c_int {
+    if file_path.is_null() || out_peaks_ptr.is_null() || max_peaks == 0 {
+        return -1;
+    }
+    let path_str = unsafe { CStr::from_ptr(file_path).to_string_lossy() };
+    match RealMediaDecoder::extract_audio_samples(&path_str, max_peaks * 256) {
+        Ok(samples) if !samples.is_empty() => {
+            let spp = (samples.len() / max_peaks).max(1);
+            let envelope = generate_waveform_peaks(&samples, 1, spp);
+            let count = envelope.peaks.len().min(max_peaks);
+            let dst_slice = unsafe { slice::from_raw_parts_mut(out_peaks_ptr, count) };
+            dst_slice.copy_from_slice(&envelope.peaks[..count]);
+            count as c_int
+        }
+        _ => 0,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn iris_preset_get_builtin_video_looks() -> *mut c_char {
+    let looks = iris_effects::Preset::builtin_video_looks();
+    let json = serde_json::to_string(&looks).unwrap_or_else(|_| "[]".into());
+    CString::new(json).unwrap().into_raw()
+}
+
+#[no_mangle]
+pub extern "C" fn iris_preset_get_builtin_photo_presets() -> *mut c_char {
+    let presets = iris_effects::Preset::builtin_photo_presets();
+    let json = serde_json::to_string(&presets).unwrap_or_else(|_| "[]".into());
+    CString::new(json).unwrap().into_raw()
+}
+
+#[no_mangle]
+pub extern "C" fn iris_preset_blend(preset_json: *const c_char, intensity: f32) -> *mut c_char {
+    if preset_json.is_null() {
+        return std::ptr::null_mut();
+    }
+    let json_str = unsafe { CStr::from_ptr(preset_json).to_string_lossy() };
+    if let Ok(preset) = iris_effects::Preset::from_json(&json_str) {
+        let blended = preset.blend_with_intensity(intensity);
+        if let Ok(out_json) = blended.to_json() {
+            return CString::new(out_json).unwrap().into_raw();
+        }
+    }
+    std::ptr::null_mut()
+}
+
+#[no_mangle]
+pub extern "C" fn iris_preset_validate(preset_json: *const c_char) -> c_int {
+    if preset_json.is_null() {
+        return -1;
+    }
+    let json_str = unsafe { CStr::from_ptr(preset_json).to_string_lossy() };
+    match iris_effects::Preset::from_json(&json_str) {
+        Ok(_) => 0,
+        Err(_) => 1,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn iris_photo_auto_enhance(
+    width: u32,
+    height: u32,
+    pixels: *const u8,
+) -> *mut c_char {
+    if pixels.is_null() || width == 0 || height == 0 {
+        return std::ptr::null_mut();
+    }
+    let total_bytes = (width as usize) * (height as usize) * 4;
+    let pixel_slice = unsafe { slice::from_raw_parts(pixels, total_bytes) };
+    let proposed = iris_effects::calculate_auto_enhance(pixel_slice, width, height);
+    let json = serde_json::to_string(&proposed).unwrap_or_else(|_| "{}".into());
+    CString::new(json).unwrap().into_raw()
 }

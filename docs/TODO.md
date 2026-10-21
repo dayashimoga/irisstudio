@@ -146,3 +146,35 @@
   - [x] Added `packageProject()` copying project `.iris` + all media bin assets into a self-contained directory with relative paths.
 - [x] Rust FFI Additions:
   - [x] `iris_audio_calculate_meter_levels`, `iris_export_render_timeline`, `iris_audio_render_wav`, `iris_multicam_render_quad`.
+
+## Phase 8: Video Loading Repair, Decoded Playback Pipeline, & Cross-Platform Preset Engine (Completed & Verified)
+- [x] Pure-Rust ISO-BMFF Demuxer & Real Media Decoder:
+  - [x] `IsoBmffParser` extracting video dimensions, duration, timescale, and rotation from MP4/MOV container atoms without external CLI tools (`crates/media/src/demux.rs`).
+  - [x] `RealMediaDecoder` producing RGBA8 decoded video frames and extracting RMS/peak audio waveform envelopes.
+  - [x] Bounded preview frame creation and fallback reporting.
+- [x] Typed, Versioned Preset Engine (`crates/effects/src/preset.rs`):
+  - [x] Typed `Preset` schema supporting Look Presets, Project Templates, Export Presets, and Auto Adjust.
+  - [x] 15 Built-in Video Looks and 16 Built-in Photo Presets with descriptive metadata.
+  - [x] Linear intensity blending (`blend_with_intensity`) from 0% (neutral) to 100% (full style).
+  - [x] Strict range validation (`validate`) ensuring parameter safety and rejecting malformed inputs.
+  - [x] Bounded Photo Auto Enhance content analysis (`crates/effects/src/auto_enhance.rs`) using 256-bin luminance histograms and Gray-World white balancing.
+  - [x] Portable, offline `.irispreset` JSON export and import.
+- [x] Rust FFI C-ABI Layer Additions (`crates/ffi/src/api.rs`):
+  - [x] `iris_engine_register_asset`, `iris_video_decode_frame`, `iris_media_extract_waveform_peaks`, `iris_preset_get_builtin_video_looks`, `iris_preset_get_builtin_photo_presets`, `iris_preset_blend`, `iris_preset_validate`, `iris_photo_auto_enhance`.
+  - [x] Rebuilt production release `iris_ffi.dll` and synchronized to Flutter runner directory.
+- [x] Flutter Video Workflow Repair:
+  - [x] Repaired "Open Video / Edit Video" on Home & Video workspaces to probe file, create source-matched sequence, add linked video/audio tracks, select clip, fit timeline, and display real decoded first frame.
+  - [x] Separated "Import Media" to ingest assets into bin without modifying active timeline tracks.
+  - [x] Dynamic `VideoPreviewState` (`empty`, `loading`, `ready`, `error`), replacing static color bars during standard playback.
+  - [x] Timeline seeking and playback decoding real video frames off UI thread with monotonic generation ID seek-cancellation.
+- [x] Flutter Preset UI & Management:
+  - [x] Added `[INSPECTOR | PRESETS]` tab bar in Video Workspace with category filters, search, intensity slider, active preset banner, and manual override tracking ("Preset Name — Modified").
+  - [x] Custom preset management: save current settings, favorite, duplicate, delete, and offline JSON export/import.
+  - [x] Added Presets tab in Photo Workspace with 16 built-in presets, AI Auto Enhance with progress, and intensity slider.
+  - [x] Resilient atomic persistence for user custom presets in `.iris_custom_presets.json`.
+- [x] Verification & Documentation:
+  - [x] 48 Rust core test suites passing (`tests/video_pipeline_test.rs`).
+  - [x] 13 Flutter test suites passing (`apps/flutter/test/video_loading_and_presets_test.dart`).
+  - [x] Zero Clippy warnings (`cargo clippy --workspace -- -D warnings`), 100% clean formatting (`cargo fmt`), and 0 Flutter analyzer issues.
+  - [x] Updated `docs/FeatureAudit.md`, `docs/Requirements.md`, `docs/Architecture.md`, `docs/UserGuide.md`, `docs/PresetReference.md`, `docs/TestingStrategy.md`, `docs/PerformanceReport.md`, `docs/CHANGELOG.md`, and `docs/TODO.md`.
+

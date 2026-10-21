@@ -90,6 +90,74 @@ impl VideoFrame {
         frame
     }
 
+    /// Creates an empty studio background frame (clean dark neutral slate).
+    pub fn create_empty_frame(dimensions: Dimensions) -> Self {
+        let mut frame = Self::new(
+            dimensions,
+            PixelFormat::Rgba8,
+            RationalTime::ZERO,
+            RationalTime::new(1, 30),
+        );
+        for chunk in frame.data.as_chunks_mut::<4>().0 {
+            chunk[0] = 18;
+            chunk[1] = 22;
+            chunk[2] = 30;
+            chunk[3] = 255;
+        }
+        frame
+    }
+
+    /// Creates a deterministic content-aware diagnostic preview frame when external decoder is absent.
+    pub fn create_diagnostic_frame(
+        dimensions: Dimensions,
+        timestamp: RationalTime,
+        filename: &str,
+        codec: &str,
+    ) -> Self {
+        let mut frame = Self::new(
+            dimensions,
+            PixelFormat::Rgba8,
+            timestamp,
+            RationalTime::new(1, 30),
+        );
+        let w = dimensions.width as usize;
+        let h = dimensions.height as usize;
+
+        let hash = filename
+            .bytes()
+            .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+        let base_r = ((hash & 0xFF) as u8).clamp(30, 180);
+        let base_g = (((hash >> 8) & 0xFF) as u8).clamp(30, 180);
+        let base_b = (((hash >> 16) & 0xFF) as u8).clamp(40, 200);
+
+        let t_secs = (timestamp.numerator as f64) / (timestamp.denominator as f64).max(1.0);
+        let sweep = ((t_secs * 60.0) as usize) % w.max(1);
+
+        for y in 0..h {
+            let row_factor = ((y * 255) / h.max(1)) as u8;
+            for x in 0..w {
+                let offset = (y * w + x) * 4;
+                let is_sweep = (x as isize - sweep as isize).abs() < 4;
+                if is_sweep {
+                    frame.data[offset] = 0;
+                    frame.data[offset + 1] = 229;
+                    frame.data[offset + 2] = 255;
+                    frame.data[offset + 3] = 255;
+                } else {
+                    let r = (base_r / 2).saturating_add(row_factor / 4);
+                    let g = (base_g / 2).saturating_add(row_factor / 4);
+                    let b = (base_b / 2).saturating_add(row_factor / 3);
+                    frame.data[offset] = r;
+                    frame.data[offset + 1] = g;
+                    frame.data[offset + 2] = b;
+                    frame.data[offset + 3] = 255;
+                }
+            }
+        }
+        let _ = codec;
+        frame
+    }
+
     pub fn byte_size(&self) -> usize {
         self.data.len()
     }

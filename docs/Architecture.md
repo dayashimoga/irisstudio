@@ -111,3 +111,20 @@ To strictly adhere to the requirement that RAM usage must never scale with sourc
    - When a command is dispatched, it is appended to an append-only WAL file on disk (`.iris-journal`) in atomic fashion.
    - On normal exit or explicit save, the main project file is updated atomically and the WAL is cleared.
    - If the application is terminated abruptly (power loss, OS kill), Iris Studio detects the pending WAL upon next launch and restores the exact session.
+
+---
+
+## 6. Video Pipeline & Preset Engine Architecture
+
+### 6.1 Real Video Loading & Seek Routing
+1. **Container Probing**: `IsoBmffParser` performs zero-copy inspection of MP4/MOV container atoms (`ftyp`, `moov`, `mvhd`, `trak`, `tkhd`, `mdia`, `stbl`), extracting accurate dimensions, timescales, durations, and rotation flags without requiring external heavyweight dependencies.
+2. **First Decoded Frame**: `RealMediaDecoder` decodes the real first frame at timestamp 0 into a pristine RGBA8 buffer. This buffer is asynchronously ingested into Flutter via `ui.decodeImageFromPixels` and drawn on canvas, completely replacing static SMPTE test bars.
+3. **Sequence & Linked Tracks**: Opening a video automatically builds a source-matched project sequence, inserts linked video and audio tracks, selects the clip, and updates playhead state to Ready.
+4. **Seek Cancellation & Generation IDs**: Monotonically increasing generation counters drop stale seeking frames during scrubbing, ensuring only the latest requested playhead frame updates the raster.
+
+### 6.2 Typed Preset Engine & Security Model
+1. **Schema Separation**: Strict typed segregation between Look Presets (`adjustments`, `vignette`, `curves`, `3D LUT`), Project Templates (`tracks`, `aspect_ratio`, `titles`), and Export Presets (`codecs`, `containers`, `bitrates`).
+2. **Intensity Blending**: Linear and non-linear parameter interpolation across `[0.0, 1.0]` allows subtle grading without categorical parameter corruption.
+3. **Offline Untrusted File Validation**: The `Preset::validate()` engine enforces strict boundary checks (exposure `[-10.0, 10.0]`, contrast `[-150.0, 150.0]`, forbidden script tags `<script>`, null bytes) before loading any imported `.irispreset` files into application memory.
+4. **Auto Enhance Analysis**: Pure statistical analysis calculates 256-bin luminance percentiles (5th and 95th percentiles), detects clipping, evaluates Gray-World channel averages, and recovers highlights dynamically without relying on cloud APIs.
+

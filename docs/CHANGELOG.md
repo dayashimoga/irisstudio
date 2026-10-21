@@ -4,6 +4,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - Phase 8: Video Loading Repair, Decoded Playback Pipeline, & Cross-Platform Preset Engine (2026-10-21)
+
+### Added
+- Native ISO-BMFF Demuxer & Real Media Decoder (`crates/media/src/demux.rs`):
+  - Pure-Rust `IsoBmffParser` parsing MP4/MOV container atoms (`moov`, `trak`, `tkhd`, `mdia`, `stbl`, `mvhd`) without external CLI binaries or network calls.
+  - Robust `RealMediaDecoder` probing file geometry, duration, timescale, and rotation.
+  - Video frame decoding to RGBA8 buffers at preview resolution with software fallback and error diagnostic reporting.
+  - Audio waveform peak envelope extraction calculating min/max normalization per time window.
+- Shared Cross-Platform Preset Engine (`crates/effects/src/preset.rs`):
+  - Typed, versioned Rust `Preset` schema (`schema_version: 1`) covering Look Presets, Project Templates, Export Presets, and Auto Adjust.
+  - 15 Built-in Video Looks: Natural, Cinema Neutral, Cinema Warm, Cinema Cool, Film-Inspired, Documentary, Sports/Action, Travel, Landscape, Portrait/Interview, Product, Food, Night/Low-Light, Vintage, Black & White.
+  - 16 Built-in Photo Presets: Natural, Auto Enhance, Portrait, Landscape, Vivid, Soft, Warm, Cool, Golden Hour, Night, Product, Food, Document/Text, Vintage, Matte, Black & White.
+  - Linear intensity blending (`blend_with_intensity`) interpolating parameters smoothly from 0% (neutral) to 100% (full preset style).
+  - Strict range validation (`validate`) rejecting malformed or out-of-range parameters.
+  - Standalone `.irispreset` JSON serialization and deserialization.
+- Intelligent Bounded Photo Auto Enhance (`crates/effects/src/auto_enhance.rs`):
+  - 256-bin luminance histogram analysis calculating shadow ($P_{0.01}$) and highlight ($P_{0.99}$) exposure points.
+  - Gray-World chromatic white balance compensation.
+  - Bounded tonal adjustments avoiding blown highlights, crushed shadows, or unnatural skin-tone shifts.
+- Rust FFI C-ABI Layer Additions (`crates/ffi/src/api.rs`):
+  - `iris_engine_register_asset`, `iris_video_decode_frame`, `iris_media_extract_waveform_peaks`, `iris_preset_get_builtin_video_looks`, `iris_preset_get_builtin_photo_presets`, `iris_preset_blend`, `iris_preset_validate`, `iris_photo_auto_enhance`.
+- Flutter Video Workflow & Preset UI Overhaul:
+  - Repaired Direct Video Sequencing ("Open Video / Edit Video") on Home and Video workspaces: automatically builds source-matched sequence, inserts linked video/audio tracks, selects clip, fits timeline, and displays real first frame.
+  - True Media Bin Isolation ("Import Media"): extracts real thumbnails and waveforms into Media Pool without altering active timeline tracks.
+  - Source vs Program Monitor routing with clear UI badge indication.
+  - Replaced hardcoded SMPTE color bars with dynamic `VideoPreviewState` (`empty`, `loading`, `ready`, `error`). Color bars reserved solely for diagnostics demo mode.
+  - Timeline seeking and playback decoding real video frames off UI thread with monotonic generation ID (`_seekGenerationId`) dropping stale requests.
+  - Inspector Tab Bar (`[INSPECTOR | PRESETS]`) in Video Workspace with category chips, live search, intensity slider, active preset indicator ("Preset Name — Modified" on manual slider override), and custom preset actions (favorite, duplicate, delete, export/import).
+  - Photo Workspace Presets Tab: AI Auto Enhance card with progress/feedback, 16 presets, intensity slider, and offline `.irispreset` export/import.
+  - Resilient local custom preset store (`.iris_custom_presets.json`) persisting across restarts.
+
+### Fixed
+- Fixed critical defect where opening an MP4 left the timeline empty, displayed color bars, and froze playhead at 00:00:00.000.
+- Resolved race conditions during rapid playhead scrubbing using generation counters.
+- Eliminated 12px `RenderFlex` overflow on Inspector tab header in compact viewports.
+- All 48 Rust core test suites passing; all 13 Flutter test suites passing cleanly; 0 Clippy warnings; 0 Flutter analysis issues.
+
 ## [1.1.0] - Phase 7: Real Offline Media Pipelines, Anti-Mock Verification & Native RIFF WAV Export (2026-10-21)
 
 ### Added

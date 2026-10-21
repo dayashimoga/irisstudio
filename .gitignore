@@ -26,3 +26,5 @@ Thumbs.db
 exports/
 dist/
 *.iris-journal
+*.iris_custom_presets.json
+.iris_custom_presets.json

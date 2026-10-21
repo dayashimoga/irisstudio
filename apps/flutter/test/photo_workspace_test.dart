@@ -64,8 +64,9 @@ void main() {
     // 6. Switch to Creative Presets & LUTs tab
     await tester.tap(find.byTooltip('Creative Presets & LUTs'));
     await tester.pumpAndSettle();
-    expect(find.text('Vivid Landscape'), findsOneWidget);
-    expect(find.text('Cinematic Teal/Orange'), findsOneWidget);
+    expect(find.text('AI & CONTENT-AWARE AUTO ENHANCE'), findsOneWidget);
+    expect(find.text('Auto Enhance Photo'), findsOneWidget);
+    expect(find.text('Landscape'), findsAtLeastNWidgets(1));
 
     // 7. Switch to Batch Photo Export tab
     await tester.tap(find.byTooltip('Batch Photo Processing & Naming Rules'));

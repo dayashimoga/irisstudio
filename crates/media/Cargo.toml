@@ -7,4 +7,6 @@ license.workspace = true
 [dependencies]
 iris_core = { path = "../core" }
 serde = { workspace = true }
+serde_json = { workspace = true }
+image = { workspace = true }
 thiserror = { workspace = true }

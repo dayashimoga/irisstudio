@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../bridge/iris_engine_controller.dart';
 import '../bridge/iris_ffi_bindings.dart';
 import '../models/photo_state.dart';
+import '../models/preset_model.dart';
 import '../theme/iris_theme.dart';
 import '../widgets/media_picker_dialog.dart';
 
@@ -19,6 +20,11 @@ class _PhotoWorkspaceState extends State<PhotoWorkspace> {
   double _zoomLevel = 1.0;
   Offset _panOffset = Offset.zero;
   String _activeTab = 'adjust'; // 'adjust', 'crop', 'retouch', 'layers', 'presets', 'batch'
+
+  // Presets and Auto-Enhance state
+  String _presetSearchQuery = '';
+  String _selectedPresetCategory = 'All';
+  bool _isAutoEnhancing = false;
 
   // Retouching active strokes
   final List<Offset> _retouchStrokes = [];
@@ -594,10 +600,12 @@ class _PhotoWorkspaceState extends State<PhotoWorkspace> {
 
           // Sub-panels based on active tab
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: _buildActiveSubPanel(),
-            ),
+            child: _activeTab == 'presets'
+                ? _buildPresetsPanel()
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: _buildActiveSubPanel(),
+                  ),
           ),
         ],
       ),
@@ -1105,65 +1113,533 @@ class _PhotoWorkspaceState extends State<PhotoWorkspace> {
   }
 
   Widget _buildPresetsPanel() {
-    final presets = [
-      {'name': 'Vivid Landscape', 'desc': 'Punchy contrast, vibrant foliage and clear skies'},
-      {'name': 'Cinematic Teal/Orange', 'desc': 'Warm skin tones and moody teal shadows'},
-      {'name': 'B&W Contrast', 'desc': 'Dramatic monochrome with high dynamic range'},
-      {'name': 'Warm Vintage', 'desc': 'Golden nostalgia with gentle fading and warm haze'},
-    ];
+    final activePreset = widget.controller.activePreset;
+    final isModified = widget.controller.isPresetModified;
+    final intensity = widget.controller.presetIntensity;
+
+    // Filter presets
+    final List<PresetModel> allPresets = widget.controller.photoPresets;
+    final categories = ['All', 'Portrait', 'Landscape', 'Vivid', 'Atmosphere', 'Vintage', 'Monochrome', 'My Presets', 'Favorites'];
+
+    final filtered = allPresets.where((p) {
+      if (_selectedPresetCategory == 'Favorites') {
+        if (!widget.controller.favoritePresetIds.contains(p.id)) return false;
+      } else if (_selectedPresetCategory == 'My Presets') {
+        if (p.isBuiltin) return false;
+      } else if (_selectedPresetCategory != 'All') {
+        if (!p.category.toLowerCase().contains(_selectedPresetCategory.toLowerCase())) return false;
+      }
+
+      if (_presetSearchQuery.trim().isNotEmpty) {
+        final q = _presetSearchQuery.trim().toLowerCase();
+        final match = p.name.toLowerCase().contains(q) ||
+            p.category.toLowerCase().contains(q) ||
+            p.description.toLowerCase().contains(q);
+        if (!match) return false;
+      }
+      return true;
+    }).toList();
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildSectionHeader('CREATIVE LOOKS & LUTS'),
-        const SizedBox(height: 8),
-        ...presets.map((preset) {
-          return Container(
-            margin: const EdgeInsets.symmetric(vertical: 4),
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: IrisTheme.surfaceMid,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: IrisTheme.border),
+        // 1. Auto Enhance Card
+        Container(
+          margin: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                IrisTheme.primaryCyan.withValues(alpha: 0.15),
+                IrisTheme.surfaceMid,
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        preset['name']!,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: IrisTheme.textPrimary,
-                        ),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: IrisTheme.primaryCyan.withValues(alpha: 0.4)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.auto_fix_high, size: 16, color: IrisTheme.primaryCyan),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'AI & CONTENT-AWARE AUTO ENHANCE',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: IrisTheme.primaryCyan,
+                        letterSpacing: 0.5,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        preset['desc']!,
-                        style: const TextStyle(fontSize: 10, color: IrisTheme.textMuted),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-                ElevatedButton(
+                ],
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Bounded statistical analysis of luminance, Gray-World white balance, and highlight recovery.',
+                style: TextStyle(fontSize: 10, color: IrisTheme.textMuted),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: _isAutoEnhancing
+                      ? const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                        )
+                      : const Icon(Icons.flash_on, size: 14),
+                  label: Text(
+                    _isAutoEnhancing ? 'Analyzing Pixels...' : 'Auto Enhance Photo',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: IrisTheme.surfaceLight,
-                    foregroundColor: IrisTheme.primaryCyan,
-                    visualDensity: VisualDensity.compact,
+                    backgroundColor: IrisTheme.primaryCyan,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
                     elevation: 0,
                   ),
-                  onPressed: () => widget.controller.applyPresetFilter(preset['name']!),
-                  child: const Text('Apply', style: TextStyle(fontSize: 11)),
+                  onPressed: _isAutoEnhancing
+                      ? null
+                      : () async {
+                          setState(() => _isAutoEnhancing = true);
+                          try {
+                            final success = await widget.controller.runPhotoAutoEnhance();
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(success
+                                      ? 'Photo Auto Enhanced with content-aware tone & color!'
+                                      : 'No photo loaded to enhance'),
+                                  backgroundColor: success ? IrisTheme.accentGreen : IrisTheme.accentAmber,
+                                ),
+                              );
+                            }
+                          } finally {
+                            if (mounted) setState(() => _isAutoEnhancing = false);
+                          }
+                        },
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // 2. Active Preset & Intensity Banner
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: const BoxDecoration(
+            color: IrisTheme.surfaceLight,
+            border: Border(
+              top: BorderSide(color: IrisTheme.border),
+              bottom: BorderSide(color: IrisTheme.border),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.palette_outlined, size: 14, color: IrisTheme.primaryCyan),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      activePreset != null ? activePreset.name : 'No Preset Active',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: IrisTheme.textPrimary),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (activePreset != null && isModified)
+                    Container(
+                      margin: const EdgeInsets.only(right: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: IrisTheme.accentAmber.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(3),
+                        border: Border.all(color: IrisTheme.accentAmber.withValues(alpha: 0.6)),
+                      ),
+                      child: const Text(
+                        'MODIFIED',
+                        style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: IrisTheme.accentAmber),
+                      ),
+                    ),
+                  if (activePreset != null)
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: IrisTheme.textMuted,
+                      ),
+                      onPressed: () => widget.controller.resetPreset(isVideo: false),
+                      child: const Text('Reset', style: TextStyle(fontSize: 10)),
+                    ),
+                ],
+              ),
+              if (activePreset != null) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Text('Intensity: ', style: TextStyle(fontSize: 10, color: IrisTheme.textMuted)),
+                    Text(
+                      '${(intensity * 100).round()}%',
+                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: IrisTheme.primaryCyan),
+                    ),
+                    Expanded(
+                      child: SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 2,
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        ),
+                        child: Slider(
+                          value: intensity,
+                          min: 0.0,
+                          max: 1.0,
+                          onChanged: (val) => widget.controller.setPresetIntensity(val, isVideo: false),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
+            ],
+          ),
+        ),
+
+        // 3. Action Toolbar (Save Custom, Import)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: const BoxDecoration(
+            color: IrisTheme.surfaceDark,
+            border: Border(bottom: BorderSide(color: IrisTheme.border)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.bookmark_add_outlined, size: 12),
+                  label: const Text('Save Preset', style: TextStyle(fontSize: 10)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: IrisTheme.primaryCyan,
+                    side: BorderSide(color: IrisTheme.primaryCyan.withValues(alpha: 0.5)),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () => _showSaveCustomPresetDialog(context),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.file_download_outlined, size: 12),
+                  label: const Text('Import Look', style: TextStyle(fontSize: 10)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: IrisTheme.textPrimary,
+                    side: const BorderSide(color: IrisTheme.border),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () => _handleImportPreset(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // 4. Search Bar
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: TextField(
+            style: const TextStyle(fontSize: 11, color: IrisTheme.textPrimary),
+            decoration: InputDecoration(
+              hintText: 'Search photo presets...',
+              hintStyle: const TextStyle(fontSize: 11, color: IrisTheme.textMuted),
+              prefixIcon: const Icon(Icons.search, size: 14, color: IrisTheme.textMuted),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(vertical: 8),
+              filled: true,
+              fillColor: IrisTheme.surfaceLight,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(4),
+                borderSide: BorderSide.none,
+              ),
             ),
-          );
-        }),
+            onChanged: (val) => setState(() => _presetSearchQuery = val),
+          ),
+        ),
+
+        // 5. Category Chips
+        SizedBox(
+          height: 32,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            scrollDirection: Axis.horizontal,
+            itemCount: categories.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 6),
+            itemBuilder: (context, idx) {
+              final cat = categories[idx];
+              final isSelected = _selectedPresetCategory == cat;
+              return ChoiceChip(
+                label: Text(cat, style: TextStyle(fontSize: 10, color: isSelected ? Colors.black : IrisTheme.textPrimary)),
+                selected: isSelected,
+                selectedColor: IrisTheme.primaryCyan,
+                backgroundColor: IrisTheme.surfaceLight,
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                onSelected: (selected) {
+                  if (selected) setState(() => _selectedPresetCategory = cat);
+                },
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 6),
+
+        // 6. Presets List
+        Expanded(
+          child: filtered.isEmpty
+              ? Center(
+                  child: Text(
+                    'No presets found in "$_selectedPresetCategory"',
+                    style: const TextStyle(fontSize: 11, color: IrisTheme.textMuted),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  itemCount: filtered.length,
+                  itemBuilder: (context, idx) {
+                    final p = filtered[idx];
+                    final isCurrent = activePreset?.id == p.id;
+                    final isFav = widget.controller.favoritePresetIds.contains(p.id);
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      decoration: BoxDecoration(
+                        color: isCurrent
+                            ? IrisTheme.primaryCyan.withValues(alpha: 0.12)
+                            : IrisTheme.surfaceLight,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: isCurrent ? IrisTheme.primaryCyan : IrisTheme.border,
+                        ),
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () => widget.controller.applyPreset(p, isVideo: false),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      p.name,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: isCurrent ? IrisTheme.primaryCyan : IrisTheme.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: IrisTheme.surfaceDark,
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                    child: Text(
+                                      p.category.toUpperCase(),
+                                      style: const TextStyle(fontSize: 8, color: IrisTheme.textMuted, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: Icon(
+                                      isFav ? Icons.star : Icons.star_border,
+                                      size: 14,
+                                      color: isFav ? IrisTheme.accentAmber : IrisTheme.textMuted,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                                    onPressed: () => widget.controller.toggleFavoritePreset(p.id),
+                                  ),
+                                  if (!p.isBuiltin)
+                                    PopupMenuButton<String>(
+                                      icon: const Icon(Icons.more_vert, size: 14, color: IrisTheme.textMuted),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                                      onSelected: (val) async {
+                                        if (val == 'duplicate') {
+                                          await widget.controller.duplicatePreset(p);
+                                        } else if (val == 'delete') {
+                                          await widget.controller.deleteCustomPreset(p.id);
+                                        } else if (val == 'export') {
+                                          final savePaths = await MediaPickerDialog.show(
+                                            context,
+                                            title: 'Export Preset',
+                                            isSaveMode: true,
+                                            defaultSaveFileName: '${p.name.replaceAll(' ', '_')}.irispreset',
+                                          );
+                                          if (savePaths != null && savePaths.isNotEmpty) {
+                                            await widget.controller.exportPresetToFile(p, savePaths.first);
+                                          }
+                                        }
+                                      },
+                                      itemBuilder: (ctx) => [
+                                        const PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
+                                        const PopupMenuItem(value: 'export', child: Text('Export .irispreset')),
+                                        const PopupMenuItem(
+                                          value: 'delete',
+                                          child: Text('Delete', style: TextStyle(color: IrisTheme.accentRed)),
+                                        ),
+                                      ],
+                                    ),
+                                ],
+                              ),
+                              if (p.description.isNotEmpty) ...[
+                                const SizedBox(height: 3),
+                                Text(
+                                  p.description,
+                                  style: const TextStyle(fontSize: 10, color: IrisTheme.textMuted),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
       ],
     );
+  }
+
+  Future<void> _showSaveCustomPresetDialog(BuildContext context) async {
+    final nameCtrl = TextEditingController(text: 'My Custom Look');
+    final descCtrl = TextEditingController();
+    String category = 'Custom';
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          backgroundColor: IrisTheme.surfaceDark,
+          title: const Text('Save Custom Photo Preset', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Preset Name', style: TextStyle(fontSize: 11, color: IrisTheme.textMuted)),
+              const SizedBox(height: 4),
+              TextField(
+                controller: nameCtrl,
+                style: const TextStyle(fontSize: 12),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: IrisTheme.surfaceLight,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide.none),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text('Category', style: TextStyle(fontSize: 11, color: IrisTheme.textMuted)),
+              const SizedBox(height: 4),
+              DropdownButtonFormField<String>(
+                initialValue: category,
+                dropdownColor: IrisTheme.surfaceDark,
+                items: ['Custom', 'Portrait', 'Landscape', 'Vivid', 'Vintage', 'Atmosphere', 'Monochrome']
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 12))))
+                    .toList(),
+                onChanged: (val) {
+                  if (val != null) setDlgState(() => category = val);
+                },
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: IrisTheme.surfaceLight,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide.none),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text('Description (Optional)', style: TextStyle(fontSize: 11, color: IrisTheme.textMuted)),
+              const SizedBox(height: 4),
+              TextField(
+                controller: descCtrl,
+                style: const TextStyle(fontSize: 12),
+                maxLines: 2,
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: IrisTheme.surfaceLight,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide.none),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(color: IrisTheme.textMuted)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: IrisTheme.primaryCyan,
+                foregroundColor: Colors.black,
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Save Preset'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == true && context.mounted) {
+      final messenger = ScaffoldMessenger.of(context);
+      await widget.controller.saveCustomPreset(
+        name: nameCtrl.text,
+        category: category,
+        description: descCtrl.text,
+        isVideo: false,
+      );
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Saved custom photo preset: "${nameCtrl.text}"'),
+            backgroundColor: IrisTheme.accentGreen,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleImportPreset(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final paths = await MediaPickerDialog.show(
+      context,
+      title: 'Import Preset (.irispreset or JSON)',
+      initialFilter: FileFilterMode.allFiles,
+      allowMultiple: false,
+    );
+    if (paths != null && paths.isNotEmpty) {
+      final ok = await widget.controller.importPresetFromFile(paths.first);
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(ok ? 'Preset imported successfully!' : 'Failed to import preset: Invalid or corrupted schema'),
+            backgroundColor: ok ? IrisTheme.accentGreen : IrisTheme.accentRed,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildBatchExportPanel() {
