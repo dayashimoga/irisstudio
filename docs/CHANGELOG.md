@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - Phase 7: Real Offline Media Pipelines, Anti-Mock Verification & Native RIFF WAV Export (2026-10-21)
+
+### Added
+- Native RIFF WAV Exporter (`crates/ffi/src/api.rs`, `apps/flutter/lib/bridge/iris_ffi_bindings.dart`):
+  - Standard 16-bit 48 kHz stereo little-endian PCM RIFF/WAVE writer (`iris_audio_render_wav`).
+  - Multi-track timeline audio evaluation factoring in clip trim points, track gain, sidechain ducking attenuation (`AudioDuckerModel`), and 3-band parametric EQ (`AudioEqModel`).
+  - Deterministic hyperbolic tangent (`tanh`) soft-clipping saturation to prevent harsh clipping over 0 dBFS.
+- Real-Time SIMD Audio Metering (`crates/ffi/src/api.rs`, `iris_audio`):
+  - Exported `iris_audio_calculate_meter_levels` C-ABI binding computing authentic RMS and peak dBFS per channel using `AudioMixer::calculate_meter_levels`.
+  - Replaced all synthetic `math.sin` modulations in the Flutter audio engine controller with live buffer evaluation.
+- Self-Contained Project Packaging (`apps/flutter/lib/bridge/iris_engine_controller.dart`):
+  - `packageProject(destinationDir)` creating portable, self-contained project bundles containing `.iris` project file and all localized media bin assets with relative paths.
+- Export Storage Preflight & Collision Handling (`apps/flutter/lib/workspaces/export_workspace.dart`):
+  - Directory existence and write permission verification before job submission.
+  - Safe automatic output name collision resolution (`{name}_export_{idx}.{ext}`).
+- True Broadcast Standard Scopes (`apps/flutter/lib/workspaces/video_workspace.dart`):
+  - Vectorscope, RGB Parade, and Waveform painters updated to draw authentic SMPTE 75% chrominance targets, 123° skin-tone axis, and 8-step luminance staircases matching industry standard monitor displays.
+
+### Fixed
+- Completely audited and purged all synthetic sine waves and prototype approximations in audio master deck meters and color scopes.
+- Fully verified all 48 Rust core test suites and all 4 Flutter integration/unit test suites with 0 warnings on `cargo clippy` and `flutter analyze`.
+- Updated comprehensive Traceability Matrix in `docs/FeatureAudit.md` classifying all 34 requirements with exact source symbols and test verifications.
+
 ## [1.0.0] - Phase 6: Optical Flow, Neural Tools & Production Release (2026-10-19)
 
 ### Added

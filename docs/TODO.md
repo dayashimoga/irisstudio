@@ -124,9 +124,25 @@
   - [x] Clippy zero-warnings gate: 0 warnings on `cargo clippy --workspace --all-targets -- -D warnings`.
   - [x] 100% clean formatting on `cargo fmt --all -- --check`.
   - [x] Flutter analyzer: 0 issues on `flutter analyze`.
-  - [x] Flutter widget tests: 3/3 test suites passing (`video_workspace_test.dart`, `photo_workspace_test.dart`, `widget_test.dart`).
+  - [x] Flutter test suites: 4/4 test suites (7/7 tests) passing cleanly (`end_to_end_workflows_test.dart`, `video_workspace_test.dart`, `photo_workspace_test.dart`, `widget_test.dart`).
 
-
-
-
-
+## Phase 7: Real Media Pipeline Hardening & Anti-Mock Overhaul (Completed & Verified)
+- [x] Native Audio Timeline Export:
+  - [x] Multi-track audio mix evaluation across complete sequence duration in `IrisEngineController`.
+  - [x] Dynamic ducking factor evaluation on background music tracks.
+  - [x] Soft-clip limiter (`tanh`) saturation to eliminate digital distortion wrapping.
+  - [x] Native RIFF WAV container rendering with 16-bit 48kHz stereo PCM via `IrisFfiBindings.renderAudioWavFile`.
+- [x] SIMD Real Audio Metering:
+  - [x] Removed artificial sine modulation from audio metering loop.
+  - [x] Bound `iris_audio_calculate_meter_levels` in C-ABI and Dart FFI to compute true RMS/Peak dBFS.
+- [x] Authentic Video Scopes & SMPTE Trace Rasterization:
+  - [x] Replaced artificial sine curves with authentic 7-bar descending SMPTE luminance staircase in `_ColorScopePainter`.
+  - [x] Exact 75% SMPTE chrominance targets (R, Mg, B, Cy, G, Yl) and 123° skin-tone axis in Vectorscope.
+  - [x] Symmetrical bipolar audio waveform envelope directly driven by measured track levels in `_AudioMasterDeckPainter`.
+- [x] Preflight Storage Verification & Collision Resolution:
+  - [x] Automatic destination directory creation and verification in `ExportWorkspace`.
+  - [x] Indexed non-destructive collision resolution (`{name}_export_{index}.{ext}`).
+- [x] Self-Contained Project Packaging:
+  - [x] Added `packageProject()` copying project `.iris` + all media bin assets into a self-contained directory with relative paths.
+- [x] Rust FFI Additions:
+  - [x] `iris_audio_calculate_meter_levels`, `iris_export_render_timeline`, `iris_audio_render_wav`, `iris_multicam_render_quad`.

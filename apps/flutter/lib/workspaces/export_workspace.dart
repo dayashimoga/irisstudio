@@ -553,15 +553,26 @@ class _ExportWorkspaceState extends State<ExportWorkspace> {
   }
 
   void _startNewExport() {
-    final jobId = 'job_${DateTime.now().millisecondsSinceEpoch}';
+    final exportDir = Directory('exports');
+    if (!exportDir.existsSync()) {
+      exportDir.createSync(recursive: true);
+    }
+
     final safeName = widget.controller.project.name
         .replaceAll(RegExp(r'[^\w\s\.-]'), '')
         .replaceAll(' ', '_');
     final ext = _container.toLowerCase().contains('wav')
         ? 'wav'
         : (_container.toLowerCase().contains('webm') ? 'webm' : 'mp4');
-    final outPath = 'exports${Platform.pathSeparator}${safeName}_export.$ext';
 
+    String outPath = 'exports${Platform.pathSeparator}${safeName}_export.$ext';
+    int index = 1;
+    while (File(outPath).existsSync()) {
+      outPath = 'exports${Platform.pathSeparator}${safeName}_export_$index.$ext';
+      index++;
+    }
+
+    final jobId = 'job_${DateTime.now().millisecondsSinceEpoch}';
     final job = ExportJob(
       id: jobId,
       title: '${widget.controller.project.name} ($_selectedPreset)',

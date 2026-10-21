@@ -67,6 +67,27 @@ class IrisHistogram {
   }
 }
 
+class IrisAudioMeterLevels {
+  final double leftDbfs;
+  final double rightDbfs;
+  final double peakLeft;
+  final double peakRight;
+
+  const IrisAudioMeterLevels({
+    required this.leftDbfs,
+    required this.rightDbfs,
+    required this.peakLeft,
+    required this.peakRight,
+  });
+
+  static const silence = IrisAudioMeterLevels(
+    leftDbfs: -60.0,
+    rightDbfs: -60.0,
+    peakLeft: 0.0,
+    peakRight: 0.0,
+  );
+}
+
 class IrisMediaInfo {
   final bool isValid;
   final String mediaType; // 'photo', 'video', 'audio', 'unknown'
@@ -209,6 +230,34 @@ class IrisFfiBindings {
   ) _irisGetAudioWaveform;
   static late final int Function(ffi.Pointer<Utf8> path)
       _irisCrashJournalHasRecovery;
+  static int Function(
+    ffi.Pointer<ffi.Float> samples,
+    int count,
+    ffi.Pointer<ffi.Float> outLeftDbfs,
+    ffi.Pointer<ffi.Float> outRightDbfs,
+    ffi.Pointer<ffi.Float> outPeakLeft,
+    ffi.Pointer<ffi.Float> outPeakRight,
+  )? _irisAudioCalculateMeterLevels;
+  static int Function(
+    ffi.Pointer<ffi.Float> samples,
+    int sampleCount,
+    int sampleRate,
+    int channels,
+    ffi.Pointer<Utf8> outputPath,
+    ffi.Pointer<ffi.Uint64> outFileSize,
+  )? _irisAudioRenderWav;
+  static int Function(
+    ffi.Pointer<ffi.Uint8> inPixels1,
+    ffi.Pointer<ffi.Uint8> inPixels2,
+    ffi.Pointer<ffi.Uint8> inPixels3,
+    ffi.Pointer<ffi.Uint8> inPixels4,
+    int inW,
+    int inH,
+    int activeAngleIdx,
+    ffi.Pointer<ffi.Uint8> outPixels,
+    int outW,
+    int outH,
+  )? _irisMulticamRenderQuad;
 
   static void initialize() {
     if (_isLoaded) return;
@@ -433,6 +482,55 @@ class IrisFfiBindings {
         .lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<Utf8>)>>(
             'iris_crash_journal_has_recovery')
         .asFunction();
+
+    try {
+      _irisAudioCalculateMeterLevels = dylib
+          .lookup<
+              ffi.NativeFunction<
+                  ffi.Int32 Function(
+                    ffi.Pointer<ffi.Float>,
+                    ffi.Size,
+                    ffi.Pointer<ffi.Float>,
+                    ffi.Pointer<ffi.Float>,
+                    ffi.Pointer<ffi.Float>,
+                    ffi.Pointer<ffi.Float>,
+                  )>>('iris_audio_calculate_meter_levels')
+          .asFunction();
+    } catch (_) {}
+
+    try {
+      _irisAudioRenderWav = dylib
+          .lookup<
+              ffi.NativeFunction<
+                  ffi.Int32 Function(
+                    ffi.Pointer<ffi.Float>,
+                    ffi.Size,
+                    ffi.Uint32,
+                    ffi.Uint16,
+                    ffi.Pointer<Utf8>,
+                    ffi.Pointer<ffi.Uint64>,
+                  )>>('iris_audio_render_wav')
+          .asFunction();
+    } catch (_) {}
+
+    try {
+      _irisMulticamRenderQuad = dylib
+          .lookup<
+              ffi.NativeFunction<
+                  ffi.Int32 Function(
+                    ffi.Pointer<ffi.Uint8>,
+                    ffi.Pointer<ffi.Uint8>,
+                    ffi.Pointer<ffi.Uint8>,
+                    ffi.Pointer<ffi.Uint8>,
+                    ffi.Uint32,
+                    ffi.Uint32,
+                    ffi.Int32,
+                    ffi.Pointer<ffi.Uint8>,
+                    ffi.Uint32,
+                    ffi.Uint32,
+                  )>>('iris_multicam_render_quad')
+          .asFunction();
+    } catch (_) {}
   }
 
   // --- High-Level Native API Methods ---
@@ -992,6 +1090,186 @@ class IrisFfiBindings {
       return false;
     } finally {
       calloc.free(pathPtr);
+    }
+  }
+
+  /// Calculates stereo RMS and peak levels from real audio samples using Rust SIMD.
+  static IrisAudioMeterLevels calculateAudioMeters(Float32List samples) {
+    if (samples.isEmpty) return IrisAudioMeterLevels.silence;
+    if (!_isLoaded || _irisAudioCalculateMeterLevels == null) {
+      double sumL = 0.0, sumR = 0.0, peakL = 0.0, peakR = 0.0;
+      final pairs = samples.length ~/ 2;
+      for (int i = 0; i < samples.length - 1; i += 2) {
+        final l = samples[i].abs();
+        final r = samples[i + 1].abs();
+        if (l > peakL) peakL = l;
+        if (r > peakR) peakR = r;
+        sumL += l * l;
+        sumR += r * r;
+      }
+      final rmsL = math.sqrt(sumL / (pairs > 0 ? pairs : 1));
+      final rmsR = math.sqrt(sumR / (pairs > 0 ? pairs : 1));
+      final lDbfs = rmsL > 1e-5 ? (20.0 * math.log(rmsL) / math.ln10).clamp(-60.0, 0.0) : -60.0;
+      final rDbfs = rmsR > 1e-5 ? (20.0 * math.log(rmsR) / math.ln10).clamp(-60.0, 0.0) : -60.0;
+      return IrisAudioMeterLevels(
+        leftDbfs: lDbfs,
+        rightDbfs: rDbfs,
+        peakLeft: peakL.clamp(0.0, 1.0),
+        peakRight: peakR.clamp(0.0, 1.0),
+      );
+    }
+
+    final count = samples.length;
+    final ptr = calloc<ffi.Float>(count);
+    ptr.asTypedList(count).setAll(0, samples);
+    final outLeft = calloc<ffi.Float>();
+    final outRight = calloc<ffi.Float>();
+    final outPeakL = calloc<ffi.Float>();
+    final outPeakR = calloc<ffi.Float>();
+
+    try {
+      final res = _irisAudioCalculateMeterLevels!(ptr, count, outLeft, outRight, outPeakL, outPeakR);
+      if (res == 0) {
+        return IrisAudioMeterLevels(
+          leftDbfs: outLeft.value.clamp(-60.0, 0.0),
+          rightDbfs: outRight.value.clamp(-60.0, 0.0),
+          peakLeft: outPeakL.value.clamp(0.0, 1.0),
+          peakRight: outPeakR.value.clamp(0.0, 1.0),
+        );
+      }
+      return IrisAudioMeterLevels.silence;
+    } catch (_) {
+      return IrisAudioMeterLevels.silence;
+    } finally {
+      calloc.free(ptr);
+      calloc.free(outLeft);
+      calloc.free(outRight);
+      calloc.free(outPeakL);
+      calloc.free(outPeakR);
+    }
+  }
+
+  /// Renders uncompressed RIFF WAV audio file directly from floating-point PCM samples.
+  static int renderAudioWavFile({
+    required Float32List samples,
+    required int sampleRate,
+    required int channels,
+    required String outputPath,
+  }) {
+    if (samples.isEmpty || outputPath.isEmpty) return -1;
+    if (!_isLoaded || _irisAudioRenderWav == null) {
+      final byteLen = samples.length * 2;
+      final wavBytes = BytesBuilder();
+      wavBytes.add(utf8.encode('RIFF'));
+      final riffChunkSize = byteLen + 36;
+      wavBytes.add([
+        riffChunkSize & 0xFF,
+        (riffChunkSize >> 8) & 0xFF,
+        (riffChunkSize >> 16) & 0xFF,
+        (riffChunkSize >> 24) & 0xFF,
+      ]);
+      wavBytes.add(utf8.encode('WAVEfmt '));
+      wavBytes.add([16, 0, 0, 0]);
+      wavBytes.add([1, 0]);
+      wavBytes.add([channels & 0xFF, 0]);
+      wavBytes.add([
+        sampleRate & 0xFF,
+        (sampleRate >> 8) & 0xFF,
+        (sampleRate >> 16) & 0xFF,
+        (sampleRate >> 24) & 0xFF,
+      ]);
+      final byteRate = sampleRate * channels * 2;
+      wavBytes.add([
+        byteRate & 0xFF,
+        (byteRate >> 8) & 0xFF,
+        (byteRate >> 16) & 0xFF,
+        (byteRate >> 24) & 0xFF,
+      ]);
+      wavBytes.add([channels * 2, 0]);
+      wavBytes.add([16, 0]);
+      wavBytes.add(utf8.encode('data'));
+      wavBytes.add([
+        byteLen & 0xFF,
+        (byteLen >> 8) & 0xFF,
+        (byteLen >> 16) & 0xFF,
+        (byteLen >> 24) & 0xFF,
+      ]);
+      final pcm = ByteData(byteLen);
+      for (int i = 0; i < samples.length; i++) {
+        final val = (samples[i].clamp(-1.0, 1.0) * 32767.0).round().clamp(-32768, 32767);
+        pcm.setInt16(i * 2, val, Endian.little);
+      }
+      wavBytes.add(pcm.buffer.asUint8List());
+      File(outputPath).writeAsBytesSync(wavBytes.toBytes(), flush: true);
+      return 0;
+    }
+
+    final count = samples.length;
+    final ptr = calloc<ffi.Float>(count);
+    ptr.asTypedList(count).setAll(0, samples);
+    final pathPtr = outputPath.toNativeUtf8();
+    final outSize = calloc<ffi.Uint64>();
+
+    try {
+      return _irisAudioRenderWav!(ptr, count, sampleRate, channels, pathPtr, outSize);
+    } catch (e) {
+      debugPrint('Error writing WAV via Rust FFI: $e');
+      return -1;
+    } finally {
+      calloc.free(ptr);
+      calloc.free(pathPtr);
+      calloc.free(outSize);
+    }
+  }
+
+  /// Renders broadcast 4-up quad monitor grid with active on-air tally border.
+  static Uint8List? renderMulticamQuad({
+    required Uint8List? frame1,
+    required Uint8List? frame2,
+    required Uint8List? frame3,
+    required Uint8List? frame4,
+    required int inW,
+    required int inH,
+    required int activeAngleIdx,
+    required int outW,
+    required int outH,
+  }) {
+    if (!_isLoaded || _irisMulticamRenderQuad == null || outW == 0 || outH == 0 || inW == 0 || inH == 0) {
+      return null;
+    }
+
+    final inLen = inW * inH * 4;
+    final outLen = outW * outH * 4;
+
+    ffi.Pointer<ffi.Uint8> allocFrame(Uint8List? f) {
+      final p = calloc<ffi.Uint8>(inLen);
+      if (f != null && f.length >= inLen) {
+        p.asTypedList(inLen).setAll(0, f);
+      }
+      return p;
+    }
+
+    final p1 = allocFrame(frame1);
+    final p2 = allocFrame(frame2);
+    final p3 = allocFrame(frame3);
+    final p4 = allocFrame(frame4);
+    final outPtr = calloc<ffi.Uint8>(outLen);
+
+    try {
+      final res = _irisMulticamRenderQuad!(p1, p2, p3, p4, inW, inH, activeAngleIdx, outPtr, outW, outH);
+      if (res == 0) {
+        return Uint8List.fromList(outPtr.asTypedList(outLen));
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error in renderMulticamQuad: $e');
+      return null;
+    } finally {
+      calloc.free(p1);
+      calloc.free(p2);
+      calloc.free(p3);
+      calloc.free(p4);
+      calloc.free(outPtr);
     }
   }
 }

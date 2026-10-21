@@ -2983,15 +2983,12 @@ class _AudioMasterDeckPainter extends CustomPainter {
 
     for (int i = 0; i < count; i++) {
       final x = i * step;
-      final waveL = isPlaying
-          ? math.sin((x * 0.05) + (playheadSeconds * 12.0)) * normL * (centerY * 0.8)
-          : (math.sin(x * 0.03) * 0.15 * centerY);
-      final yL = (centerY / 2) + waveL;
-
-      final waveR = isPlaying
-          ? math.sin((x * 0.05) + (playheadSeconds * 12.0) + 1.2) * normR * (centerY * 0.8)
-          : (math.sin(x * 0.03 + 1.0) * 0.15 * centerY);
-      final yR = (centerY + centerY / 2) + waveR;
+      final t = (x / size.width) * (totalDuration > 0 ? totalDuration : 1.0);
+      final isNearPlayhead = (t - playheadSeconds).abs() < 0.2;
+      final ampL = isNearPlayhead && isPlaying ? normL : (normL * 0.4);
+      final ampR = isNearPlayhead && isPlaying ? normR : (normR * 0.4);
+      final yL = (centerY / 2) + (ampL * (centerY * 0.4) * ((i % 2 == 0) ? 1.0 : -0.7));
+      final yR = (centerY + centerY / 2) + (ampR * (centerY * 0.4) * ((i % 2 == 0) ? -0.7 : 1.0));
 
       if (i == 0) {
         pathL.moveTo(x, yL);
@@ -3074,22 +3071,29 @@ class _ColorScopePainter extends CustomPainter {
     }
 
     final tracePaint = Paint()
-      ..color = const Color(0xFF40E082).withValues(alpha: 0.6)
-      ..strokeWidth = 1.2;
+      ..color = const Color(0xFF40E082).withValues(alpha: 0.85)
+      ..strokeWidth = 1.5;
 
-    final path = Path();
-    for (double x = 0; x < size.width; x += 3) {
-      final wave = math.sin(x * 0.08) * 0.25 + math.cos(x * 0.04) * 0.15 + 0.5;
-      final y = (size.height * (1.0 - wave)).clamp(0.0, size.height);
-      if (x == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
+    final stepWidth = size.width / 7.0;
+    // Authentic SMPTE descending luminance staircase: White, Yellow, Cyan, Green, Magenta, Red, Blue
+    final smpteLuma = [1.0, 0.89, 0.70, 0.59, 0.41, 0.30, 0.11];
+    for (int bar = 0; bar < 7; bar++) {
+      final xStart = bar * stepWidth;
+      final xEnd = (bar + 1) * stepWidth;
+      final y = (size.height * (1.0 - smpteLuma[bar])).clamp(0.0, size.height);
+      canvas.drawLine(Offset(xStart + 1, y), Offset(xEnd - 1, y), tracePaint);
+      if (bar < 6) {
+        final nextY = (size.height * (1.0 - smpteLuma[bar + 1])).clamp(0.0, size.height);
+        canvas.drawLine(
+          Offset(xEnd - 1, y),
+          Offset(xEnd + 1, nextY),
+          tracePaint..color = const Color(0xFF40E082).withValues(alpha: 0.4),
+        );
+        tracePaint.color = const Color(0xFF40E082).withValues(alpha: 0.85);
       }
     }
-    canvas.drawPath(path, tracePaint..style = PaintingStyle.stroke);
 
-    _drawLabel(canvas, 'LUMA WAVEFORM', const Offset(6, 4));
+    _drawLabel(canvas, 'LUMA WAVEFORM (SMPTE)', const Offset(6, 4));
   }
 
   void _paintVectorscope(Canvas canvas, Size size, Paint graticulePaint) {
@@ -3107,20 +3111,39 @@ class _ColorScopePainter extends CustomPainter {
       ..strokeWidth = 1.0;
     canvas.drawLine(center, skinEnd, skinPaint);
 
-    final tracePaint = Paint()
-      ..color = const Color(0xFF50DCA0).withValues(alpha: 0.5)
-      ..style = PaintingStyle.fill;
-    for (int i = 0; i < 40; i++) {
-      final angle = i * 0.35;
-      final r = (math.sin(i * 1.7).abs() * radius * 0.6);
+    // Authentic SMPTE 75% chrominance targets: Red, Magenta, Blue, Cyan, Green, Yellow
+    final targets = [
+      {'name': 'R', 'deg': 103.5, 'color': const Color(0xFFFF4040)},
+      {'name': 'Mg', 'deg': 61.0, 'color': const Color(0xFFFF40FF)},
+      {'name': 'B', 'deg': 347.0, 'color': const Color(0xFF4060FF)},
+      {'name': 'Cy', 'deg': 283.5, 'color': const Color(0xFF40FFFF)},
+      {'name': 'G', 'deg': 241.0, 'color': const Color(0xFF40FF40)},
+      {'name': 'Yl', 'deg': 167.0, 'color': const Color(0xFFFFFF40)},
+    ];
+
+    for (final t in targets) {
+      final rad = (t['deg'] as double) * math.pi / 180.0;
+      final tr = radius * 0.75;
+      final tx = center.dx + tr * math.cos(rad);
+      final ty = center.dy - tr * math.sin(rad);
+
+      canvas.drawRect(
+        Rect.fromCenter(center: Offset(tx, ty), width: 8, height: 8),
+        Paint()
+          ..color = (t['color'] as Color).withValues(alpha: 0.6)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.0,
+      );
       canvas.drawCircle(
-        Offset(center.dx + r * math.cos(angle), center.dy + r * math.sin(angle)),
+        Offset(tx, ty),
         1.5,
-        tracePaint,
+        Paint()..color = t['color'] as Color,
       );
     }
 
-    _drawLabel(canvas, 'VECTORSCOPE', const Offset(6, 4));
+    // Center subcarrier burst dot
+    canvas.drawCircle(center, 2.0, Paint()..color = const Color(0xFF50DCA0));
+    _drawLabel(canvas, 'VECTORSCOPE (75% SMPTE)', const Offset(6, 4));
   }
 
   void _paintRgbParade(Canvas canvas, Size size, Paint graticulePaint) {
@@ -3134,34 +3157,38 @@ class _ColorScopePainter extends CustomPainter {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), graticulePaint);
     }
 
-    final colors = [
+    final channelColors = [
       const Color(0xFFFF5050),
       const Color(0xFF50FF64),
       const Color(0xFF50A0FF),
     ];
+    final channelNames = ['R', 'G', 'B'];
+
+    // Authentic SMPTE RGB Channel Step Bars
+    final channelLevels = [
+      [1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0], // Red channel across 7 bars
+      [1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0], // Green channel across 7 bars
+      [1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0], // Blue channel across 7 bars
+    ];
 
     for (int ch = 0; ch < 3; ch++) {
       final startX = ch * subW;
-      final path = Path();
-      for (double x = 0; x < subW; x += 3) {
-        final wave = math.sin((startX + x) * 0.1 + ch) * 0.3 + 0.5;
-        final y = (size.height * (1.0 - wave)).clamp(0.0, size.height);
-        if (x == 0) {
-          path.moveTo(startX + x, y);
-        } else {
-          path.lineTo(startX + x, y);
-        }
+      final stepW = subW / 7.0;
+      final chPaint = Paint()
+        ..color = channelColors[ch].withValues(alpha: 0.85)
+        ..strokeWidth = 1.5;
+
+      for (int bar = 0; bar < 7; bar++) {
+        final x1 = startX + bar * stepW;
+        final x2 = startX + (bar + 1) * stepW;
+        final y = (size.height * (1.0 - channelLevels[ch][bar])).clamp(0.0, size.height);
+        canvas.drawLine(Offset(x1 + 1, y), Offset(x2 - 1, y), chPaint);
       }
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = colors[ch].withValues(alpha: 0.7)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2,
-      );
+
+      _drawLabel(canvas, channelNames[ch], Offset(startX + 6, 4));
     }
 
-    _drawLabel(canvas, 'RGB PARADE', const Offset(6, 4));
+    _drawLabel(canvas, 'RGB PARADE', Offset(size.width - 55, 4));
   }
 
   void _drawLabel(Canvas canvas, String text, Offset offset) {

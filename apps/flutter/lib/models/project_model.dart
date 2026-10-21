@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 class RationalTimeModel {
   final int numerator;
   final int denominator;
@@ -354,6 +356,8 @@ class AudioDuckerModel {
     this.releaseMs = 450.0,
     this.dialogueTrackId,
   });
+
+  double get duckGain => math.pow(10.0, duckAttenuationDb / 20.0).toDouble();
 }
 
 enum ColorScopeMode {

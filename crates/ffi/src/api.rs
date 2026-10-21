@@ -1,8 +1,8 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 use iris_audio::{
-    generate_waveform_peaks, AudioCompressor, AudioDucker, BinauralPanner, DuckingParameters,
-    EqualizerBand, ThreeBandEq, WaveformPeak, WsolaTimeStretch,
+    generate_waveform_peaks, AudioCompressor, AudioDucker, AudioMixer, BinauralPanner,
+    DuckingParameters, EqualizerBand, ThreeBandEq, WaveformPeak, WsolaTimeStretch,
 };
 use iris_cache::{CacheManager, MemoryBudgetTier};
 use iris_core::{Dimensions, PixelFormat, Point, RationalTime, Rect};
@@ -16,7 +16,8 @@ use iris_effects::{
     ToneMappingAlgorithm,
 };
 use iris_export::{
-    validate_exported_media, BatchPhotoProcessor, BatchPhotoTask, ExportPreset, StreamCopyOptimizer,
+    validate_exported_media, BatchPhotoProcessor, BatchPhotoTask, ExportPreset, ExportScheduler,
+    StreamCopyOptimizer,
 };
 use iris_images::{
     apply_exif_orientation, apply_lens_correction, apply_perspective_warp, crop_image,
@@ -995,6 +996,47 @@ pub extern "C" fn iris_audio_process_compressor(
 }
 
 #[no_mangle]
+pub extern "C" fn iris_audio_calculate_meter_levels(
+    samples: *const f32,
+    count: usize,
+    out_left_dbfs: *mut f32,
+    out_right_dbfs: *mut f32,
+    out_peak_left: *mut f32,
+    out_peak_right: *mut f32,
+) -> c_int {
+    if samples.is_null() || count == 0 {
+        if !out_left_dbfs.is_null() {
+            unsafe { *out_left_dbfs = -60.0 };
+        }
+        if !out_right_dbfs.is_null() {
+            unsafe { *out_right_dbfs = -60.0 };
+        }
+        if !out_peak_left.is_null() {
+            unsafe { *out_peak_left = 0.0 };
+        }
+        if !out_peak_right.is_null() {
+            unsafe { *out_peak_right = 0.0 };
+        }
+        return 0;
+    }
+    let slice = unsafe { slice::from_raw_parts(samples, count) };
+    let levels = AudioMixer::calculate_meter_levels(slice);
+    if !out_left_dbfs.is_null() {
+        unsafe { *out_left_dbfs = levels.left_dbfs };
+    }
+    if !out_right_dbfs.is_null() {
+        unsafe { *out_right_dbfs = levels.right_dbfs };
+    }
+    if !out_peak_left.is_null() {
+        unsafe { *out_peak_left = levels.peak_left };
+    }
+    if !out_peak_right.is_null() {
+        unsafe { *out_peak_right = levels.peak_right };
+    }
+    0
+}
+
+#[no_mangle]
 pub extern "C" fn iris_timeline_add_transition(
     engine: *mut IrisEngine,
     id: *const c_char,
@@ -1154,6 +1196,106 @@ pub extern "C" fn iris_export_analyze_stream_copy(
     }
     if !out_speedup_factor.is_null() {
         unsafe { *out_speedup_factor = plan.estimated_speedup };
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn iris_export_render_timeline(
+    engine: *mut IrisEngine,
+    output_path: *const c_char,
+    preset_idx: c_int,
+    out_file_size: *mut u64,
+) -> c_int {
+    if engine.is_null() || output_path.is_null() {
+        return -1;
+    }
+    let e = unsafe { &mut *engine };
+    let path_str = unsafe { CStr::from_ptr(output_path).to_string_lossy().into_owned() };
+    let preset = match preset_idx {
+        0 => ExportPreset::YouTube4k,
+        1 => ExportPreset::Web1080p,
+        2 => ExportPreset::SocialReels9x16,
+        _ => ExportPreset::LosslessMaster,
+    };
+    let config = preset.to_config(path_str.clone());
+    let scheduler = ExportScheduler::new();
+    match scheduler.run_export(&e.project.timeline, &config, &e.source_resolver, |_| {}) {
+        Ok(_) => {
+            if let Ok(meta) = std::fs::metadata(&path_str) {
+                if !out_file_size.is_null() {
+                    unsafe { *out_file_size = meta.len() };
+                }
+            }
+            0
+        }
+        Err(_) => -2,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn iris_audio_render_wav(
+    samples: *const f32,
+    sample_count: usize,
+    sample_rate: u32,
+    channels: u16,
+    output_path: *const c_char,
+    out_file_size: *mut u64,
+) -> c_int {
+    use std::io::Write;
+    if samples.is_null()
+        || sample_count == 0
+        || output_path.is_null()
+        || channels == 0
+        || sample_rate == 0
+    {
+        return -1;
+    }
+    let path_str = unsafe { CStr::from_ptr(output_path).to_string_lossy().into_owned() };
+    let slice = unsafe { slice::from_raw_parts(samples, sample_count) };
+
+    let total_audio_frames = sample_count / channels as usize;
+    let byte_len = (total_audio_frames * channels as usize * 2) as u32; // 16-bit PCM
+    let mut file = match std::fs::File::create(&path_str) {
+        Ok(f) => f,
+        Err(_) => return -2,
+    };
+
+    let mut header = Vec::with_capacity(44);
+    header.extend_from_slice(b"RIFF");
+    let riff_chunk_size = byte_len + 36;
+    header.extend_from_slice(&riff_chunk_size.to_le_bytes());
+    header.extend_from_slice(b"WAVEfmt ");
+    header.extend_from_slice(&16u32.to_le_bytes()); // subchunk1 size
+    header.extend_from_slice(&1u16.to_le_bytes()); // PCM format = 1
+    header.extend_from_slice(&channels.to_le_bytes());
+    header.extend_from_slice(&sample_rate.to_le_bytes());
+    let byte_rate = sample_rate * channels as u32 * 2;
+    header.extend_from_slice(&byte_rate.to_le_bytes());
+    let block_align = channels * 2;
+    header.extend_from_slice(&block_align.to_le_bytes());
+    header.extend_from_slice(&16u16.to_le_bytes()); // 16 bits per sample
+    header.extend_from_slice(b"data");
+    header.extend_from_slice(&byte_len.to_le_bytes());
+
+    if file.write_all(&header).is_err() {
+        return -3;
+    }
+
+    let mut pcm_bytes = Vec::with_capacity(byte_len as usize);
+    for &sample in slice {
+        let clamped = (sample.clamp(-1.0, 1.0) * 32767.0).round() as i16;
+        pcm_bytes.extend_from_slice(&clamped.to_le_bytes());
+    }
+
+    if file.write_all(&pcm_bytes).is_err() || file.flush().is_err() {
+        return -4;
+    }
+
+    if let Ok(meta) = std::fs::metadata(&path_str) {
+        if !out_file_size.is_null() {
+            unsafe { *out_file_size = meta.len() };
+        }
     }
     0
 }
