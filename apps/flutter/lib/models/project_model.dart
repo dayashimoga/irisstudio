@@ -392,6 +392,7 @@ class MotionTitleModel {
 
 class HardwareAccelerationInfo {
   final String backendName;
+  final String deviceName;
   final bool isAvailable;
   final bool supportsZeroCopy;
   final int maxWidth;
@@ -400,6 +401,7 @@ class HardwareAccelerationInfo {
 
   const HardwareAccelerationInfo({
     required this.backendName,
+    this.deviceName = 'Direct3D 11 Hardware Decoder',
     this.isAvailable = true,
     this.supportsZeroCopy = true,
     this.maxWidth = 8192,
@@ -409,6 +411,7 @@ class HardwareAccelerationInfo {
 
   static const HardwareAccelerationInfo defaultDetected = HardwareAccelerationInfo(
     backendName: 'DirectX 11 Video Acceleration (D3D11VA)',
+    deviceName: 'Direct3D 11 Hardware Decoder',
     isAvailable: true,
     supportsZeroCopy: true,
     maxWidth: 8192,
@@ -547,6 +550,142 @@ class ProjectModel {
         }
       }
     }
-    return maxDur > 0.0 ? maxDur : 10.0;
+    return maxDur;
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'fps': fps,
+        'width': width,
+        'height': height,
+        'tracks': tracks
+            .map((t) => {
+                  'id': t.id,
+                  'name': t.name,
+                  'kind': t.kind.name,
+                  'isMuted': t.isMuted,
+                  'isSolo': t.isSolo,
+                  'isLocked': t.isLocked,
+                  'volume': t.volume,
+                  'clips': t.clips
+                      .map((c) => {
+                            'id': c.id,
+                            'assetId': c.assetId,
+                            'name': c.name,
+                            'timelineStart': c.timelineStart,
+                            'duration': c.duration,
+                            'speed': c.speed,
+                            'opacity': c.opacity,
+                            'scale': c.scale,
+                            'rotation': c.rotation,
+                            'volume': c.volume,
+                          })
+                      .toList(),
+                })
+            .toList(),
+        'transitions': transitions
+            .map((tr) => {
+                  'id': tr.id,
+                  'kindName': tr.kindName,
+                  'startTime': tr.startTime,
+                  'duration': tr.duration,
+                  'clipAId': tr.clipAId,
+                  'clipBId': tr.clipBId,
+                })
+            .toList(),
+        'subtitles': subtitles
+            .map((s) => {
+                  'id': s.id,
+                  'startTime': s.startTime,
+                  'duration': s.duration,
+                  'text': s.text,
+                })
+            .toList(),
+        'eq': {
+          'low': eq.lowGainDb,
+          'mid': eq.midGainDb,
+          'high': eq.highGainDb,
+        },
+      };
+
+  factory ProjectModel.fromJson(Map<String, dynamic> json) {
+    final tracksList = (json['tracks'] as List<dynamic>? ?? []).map((tJson) {
+      final t = tJson as Map<String, dynamic>;
+      final kindStr = t['kind'] as String? ?? 'video';
+      final kind = TrackKindModel.values.firstWhere(
+        (k) => k.name == kindStr,
+        orElse: () => TrackKindModel.video,
+      );
+      final clipsList = (t['clips'] as List<dynamic>? ?? []).map((cJson) {
+        final c = cJson as Map<String, dynamic>;
+        return ClipModel(
+          id: c['id'] as String? ?? 'c_1',
+          assetId: c['assetId'] as String? ?? 'asset_1',
+          name: c['name'] as String? ?? 'Clip',
+          timelineStart: (c['timelineStart'] as num?)?.toDouble() ?? 0.0,
+          duration: (c['duration'] as num?)?.toDouble() ?? 5.0,
+          speed: (c['speed'] as num?)?.toDouble() ?? 1.0,
+          opacity: (c['opacity'] as num?)?.toDouble() ?? 1.0,
+          scale: (c['scale'] as num?)?.toDouble() ?? 1.0,
+          rotation: (c['rotation'] as num?)?.toDouble() ?? 0.0,
+          volume: (c['volume'] as num?)?.toDouble() ?? 1.0,
+        );
+      }).toList();
+
+      return TrackModel(
+        id: t['id'] as String? ?? 'trk_1',
+        name: t['name'] as String? ?? 'Track',
+        kind: kind,
+        isMuted: t['isMuted'] as bool? ?? false,
+        isSolo: t['isSolo'] as bool? ?? false,
+        isLocked: t['isLocked'] as bool? ?? false,
+        volume: (t['volume'] as num?)?.toDouble() ?? 1.0,
+        clips: clipsList,
+      );
+    }).toList();
+
+    final transitionsList = (json['transitions'] as List<dynamic>? ?? []).map((trJson) {
+      final tr = trJson as Map<String, dynamic>;
+      return TransitionModel(
+        id: tr['id'] as String? ?? 'tr_1',
+        kindName: tr['kindName'] as String? ?? 'Cross Dissolve',
+        startTime: (tr['startTime'] as num?)?.toDouble() ?? 0.0,
+        duration: (tr['duration'] as num?)?.toDouble() ?? 1.0,
+        clipAId: tr['clipAId'] as String? ?? '',
+        clipBId: tr['clipBId'] as String? ?? '',
+      );
+    }).toList();
+
+    final subtitlesList = (json['subtitles'] as List<dynamic>? ?? []).map((sJson) {
+      final s = sJson as Map<String, dynamic>;
+      return SubtitleItemModel(
+        id: s['id'] as String? ?? 'sub_1',
+        startTime: (s['startTime'] as num?)?.toDouble() ?? 0.0,
+        duration: (s['duration'] as num?)?.toDouble() ?? 3.0,
+        text: s['text'] as String? ?? '',
+      );
+    }).toList();
+
+    final eqJson = json['eq'] as Map<String, dynamic>?;
+    final eqModel = eqJson != null
+        ? AudioEqModel(
+            lowGainDb: (eqJson['low'] as num?)?.toDouble() ?? 0.0,
+            midGainDb: (eqJson['mid'] as num?)?.toDouble() ?? 0.0,
+            highGainDb: (eqJson['high'] as num?)?.toDouble() ?? 0.0,
+          )
+        : AudioEqModel();
+
+    return ProjectModel(
+      id: json['id'] as String? ?? 'prj_${DateTime.now().millisecondsSinceEpoch}',
+      name: json['name'] as String? ?? 'Untitled Project',
+      fps: json['fps'] as int? ?? 30,
+      width: json['width'] as int? ?? 1920,
+      height: json['height'] as int? ?? 1080,
+      tracks: tracksList,
+      transitions: transitionsList,
+      subtitles: subtitlesList,
+      eq: eqModel,
+    );
   }
 }

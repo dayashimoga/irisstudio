@@ -35,8 +35,12 @@ pub fn validate_exported_media(path: impl AsRef<Path>) -> IrisResult<()> {
     let is_png = buf.starts_with(b"\x89PNG");
     let is_jpeg = buf.starts_with(b"\xFF\xD8\xFF");
     let is_webp = n >= 12 && &buf[..4] == b"RIFF" && &buf[8..12] == b"WEBP";
+    let is_wav = n >= 12 && &buf[..4] == b"RIFF" && &buf[8..12] == b"WAVE";
+    let is_mp4 =
+        n >= 8 && (&buf[4..8] == b"ftyp" || &buf[4..8] == b"moov" || &buf[4..8] == b"mdat");
+    let is_ebml = n >= 4 && &buf[..4] == b"\x1A\x45\xDF\xA3";
 
-    if !is_iris && !is_png && !is_jpeg && !is_webp {
+    if !is_iris && !is_png && !is_jpeg && !is_webp && !is_wav && !is_mp4 && !is_ebml {
         return Err(IrisError::EncodeError(
             "Export validation failed: container header mismatch or corrupt stream".into(),
         ));

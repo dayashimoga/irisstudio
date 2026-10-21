@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../bridge/iris_engine_controller.dart';
 import '../models/export_job.dart';
@@ -78,8 +79,8 @@ class _ExportWorkspaceState extends State<ExportWorkspace> {
         'tag': 'Social',
       },
       {
-        'title': 'Archival Lossless Master',
-        'subtitle': '1920×1080 • 60 fps • High Bitrate WebM',
+        'title': 'Production Master (Lossless / High Bitrate)',
+        'subtitle': '1920×1080 • 60 fps • High Bitrate WebM / PNG Sequence',
         'icon': Icons.archive_outlined,
         'tag': 'Lossless',
       },
@@ -440,20 +441,63 @@ class _ExportWorkspaceState extends State<ExportWorkspace> {
                           ),
                         ),
                         if (isDone)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: IrisTheme.accentGreen.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              'VERIFIED INTEGRITY OK',
-                              style: TextStyle(
-                                color: IrisTheme.accentGreen,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: IrisTheme.accentGreen.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  job.fileSizeBytes > 0
+                                      ? 'VERIFIED (${(job.fileSizeBytes / (1024 * 1024)).toStringAsFixed(2)} MB)'
+                                      : 'VERIFIED OK',
+                                  style: const TextStyle(
+                                    color: IrisTheme.accentGreen,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 8),
+                              TextButton.icon(
+                                icon: const Icon(Icons.play_circle_outline, size: 14),
+                                label: const Text('Open Output', style: TextStyle(fontSize: 11)),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: IrisTheme.primaryCyan,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                onPressed: () {
+                                  if (Platform.isWindows) {
+                                    Process.run('cmd', ['/c', 'start', '', job.outputPath]);
+                                  } else if (Platform.isMacOS) {
+                                    Process.run('open', [job.outputPath]);
+                                  } else {
+                                    Process.run('xdg-open', [job.outputPath]);
+                                  }
+                                },
+                              ),
+                              TextButton.icon(
+                                icon: const Icon(Icons.folder_open, size: 14),
+                                label: const Text('Reveal in Folder', style: TextStyle(fontSize: 11)),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: IrisTheme.textSecondary,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                onPressed: () {
+                                  if (Platform.isWindows) {
+                                    Process.run('explorer.exe', ['/select,', job.outputPath]);
+                                  } else if (Platform.isMacOS) {
+                                    Process.run('open', ['-R', job.outputPath]);
+                                  } else {
+                                    final dir = File(job.outputPath).parent.path;
+                                    Process.run('xdg-open', [dir]);
+                                  }
+                                },
+                              ),
+                            ],
                           ),
                         if (isProcessing)
                           IconButton(
@@ -478,9 +522,13 @@ class _ExportWorkspaceState extends State<ExportWorkspace> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          '${job.resolution} • ${job.format} • ${job.fps} fps',
-                          style: const TextStyle(color: IrisTheme.textMuted, fontSize: 11),
+                        Expanded(
+                          child: Text(
+                            '${job.resolution} • ${job.format} • ${job.fps} fps • Output: ${job.outputPath}',
+                            style: const TextStyle(color: IrisTheme.textMuted, fontSize: 11),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                         Text(
                           isDone
@@ -506,10 +554,18 @@ class _ExportWorkspaceState extends State<ExportWorkspace> {
 
   void _startNewExport() {
     final jobId = 'job_${DateTime.now().millisecondsSinceEpoch}';
+    final safeName = widget.controller.project.name
+        .replaceAll(RegExp(r'[^\w\s\.-]'), '')
+        .replaceAll(' ', '_');
+    final ext = _container.toLowerCase().contains('wav')
+        ? 'wav'
+        : (_container.toLowerCase().contains('webm') ? 'webm' : 'mp4');
+    final outPath = 'exports${Platform.pathSeparator}${safeName}_export.$ext';
+
     final job = ExportJob(
       id: jobId,
       title: '${widget.controller.project.name} ($_selectedPreset)',
-      outputPath: 'exports/${widget.controller.project.name}.mp4',
+      outputPath: outPath,
       format: _container,
       resolution: _resolution,
       fps: _fps,

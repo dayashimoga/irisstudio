@@ -1,12 +1,120 @@
 import 'package:flutter/material.dart';
 import '../bridge/iris_engine_controller.dart';
 import '../bridge/iris_ffi_bindings.dart';
+import '../models/recent_project_item.dart';
 import '../theme/iris_theme.dart';
+import '../widgets/media_picker_dialog.dart';
 
-class HomeWorkspace extends StatelessWidget {
+class HomeWorkspace extends StatefulWidget {
   final IrisEngineController controller;
 
   const HomeWorkspace({super.key, required this.controller});
+
+  @override
+  State<HomeWorkspace> createState() => _HomeWorkspaceState();
+}
+
+class _HomeWorkspaceState extends State<HomeWorkspace> {
+  late Future<List<RecentProjectItem>> _recentProjectsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshRecentProjects();
+  }
+
+  void _refreshRecentProjects() {
+    setState(() {
+      _recentProjectsFuture = RecentProjectItem.loadRecentProjects();
+    });
+  }
+
+  Future<void> _openProjectFromDisk() async {
+    final paths = await MediaPickerDialog.show(
+      context,
+      title: 'Open Iris Studio Project',
+      initialFilter: FileFilterMode.projects,
+      allowMultiple: false,
+    );
+
+    if (paths != null && paths.isNotEmpty) {
+      final ok = await widget.controller.openProjectFile(paths.first);
+      if (ok && mounted) {
+        widget.controller.switchWorkspace(ActiveWorkspace.video);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to open project file: invalid format or corrupt schema')),
+        );
+      }
+    }
+  }
+
+  void _showNewProjectDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: IrisTheme.surfaceDark,
+          title: const Text(
+            'Create New Project',
+            style: TextStyle(color: IrisTheme.textPrimary, fontSize: 16),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.movie_outlined, color: IrisTheme.primaryCyan),
+                title: const Text('New Video Project', style: TextStyle(color: IrisTheme.textPrimary, fontSize: 13)),
+                subtitle: const Text('1920×1080 30fps multitrack video + audio sequence (Starts Empty)', style: TextStyle(color: IrisTheme.textMuted, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  widget.controller.createNewProject(name: 'Untitled Video Project', type: 'video');
+                  widget.controller.switchWorkspace(ActiveWorkspace.video);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.image_outlined, color: IrisTheme.accentPurple),
+                title: const Text('New Photo Project', style: TextStyle(color: IrisTheme.textPrimary, fontSize: 13)),
+                subtitle: const Text('Nondestructive RAW/JPEG canvas with parametric grading', style: TextStyle(color: IrisTheme.textMuted, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  widget.controller.createNewProject(name: 'Untitled Photo Project', type: 'photo');
+                  widget.controller.switchWorkspace(ActiveWorkspace.photo);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.audiotrack, color: IrisTheme.accentGreen),
+                title: const Text('New Audio-Only Project', style: TextStyle(color: IrisTheme.textPrimary, fontSize: 13)),
+                subtitle: const Text('Multichannel audio mixing without dummy video tracks', style: TextStyle(color: IrisTheme.textMuted, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  widget.controller.createNewProject(name: 'Untitled Audio Project', type: 'audio');
+                  widget.controller.switchWorkspace(ActiveWorkspace.video);
+                },
+              ),
+              const Divider(color: IrisTheme.border),
+              ListTile(
+                leading: const Icon(Icons.auto_awesome, color: IrisTheme.accentAmber),
+                title: const Text('Load Showcase Demo Project', style: TextStyle(color: IrisTheme.accentAmber, fontSize: 13, fontWeight: FontWeight.w600)),
+                subtitle: const Text('Pre-seeds sample 4K and audio clips for feature verification', style: TextStyle(color: IrisTheme.textMuted, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  widget.controller.loadDemoProject();
+                  widget.controller.switchWorkspace(ActiveWorkspace.video);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,8 +123,8 @@ class HomeWorkspace extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 1. Crash Recovery Alert Banner (if unrecovered journal detected)
-          if (controller.hasUnrecoveredCrash) _buildCrashRecoveryBanner(context),
+          // 1. Crash Recovery Alert Banner
+          if (widget.controller.hasUnrecoveredCrash) _buildCrashRecoveryBanner(context),
 
           // 2. Welcome & Hero Header
           _buildHeroHeader(context),
@@ -35,7 +143,7 @@ class HomeWorkspace extends StatelessWidget {
           _buildProjectTemplates(context),
           const SizedBox(height: 36),
 
-          // 4. Recent Projects
+          // 4. Recent Projects Section
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -47,11 +155,22 @@ class HomeWorkspace extends StatelessWidget {
                   color: IrisTheme.textPrimary,
                 ),
               ),
-              TextButton.icon(
-                icon: const Icon(Icons.folder_open, size: 16),
-                label: const Text('Open From Disk...'),
-                style: TextButton.styleFrom(foregroundColor: IrisTheme.primaryCyan),
-                onPressed: () {},
+              Row(
+                children: [
+                  TextButton.icon(
+                    icon: const Icon(Icons.refresh, size: 14),
+                    label: const Text('Refresh'),
+                    style: TextButton.styleFrom(foregroundColor: IrisTheme.textSecondary),
+                    onPressed: _refreshRecentProjects,
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    icon: const Icon(Icons.folder_open, size: 16),
+                    label: const Text('Open From Disk...'),
+                    style: TextButton.styleFrom(foregroundColor: IrisTheme.primaryCyan),
+                    onPressed: _openProjectFromDisk,
+                  ),
+                ],
               ),
             ],
           ),
@@ -105,7 +224,7 @@ class HomeWorkspace extends StatelessWidget {
               foregroundColor: IrisTheme.textSecondary,
               side: const BorderSide(color: IrisTheme.border),
             ),
-            onPressed: controller.dismissCrashRecovery,
+            onPressed: widget.controller.dismissCrashRecovery,
             child: const Text('Discard'),
           ),
           const SizedBox(width: 10),
@@ -116,7 +235,7 @@ class HomeWorkspace extends StatelessWidget {
               backgroundColor: IrisTheme.accentAmber,
               foregroundColor: Colors.black,
             ),
-            onPressed: controller.restoreCrashSession,
+            onPressed: widget.controller.restoreCrashSession,
           ),
         ],
       ),
@@ -203,7 +322,7 @@ class HomeWorkspace extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             ),
-            onPressed: () => controller.switchWorkspace(ActiveWorkspace.video),
+            onPressed: _showNewProjectDialog,
           ),
         ],
       ),
@@ -216,25 +335,29 @@ class HomeWorkspace extends StatelessWidget {
         'title': 'Video 16:9 Cinema / 4K',
         'subtitle': '3840×2160 • 60 fps • Multitrack',
         'icon': Icons.video_camera_back_outlined,
+        'type': 'video',
         'workspace': ActiveWorkspace.video,
       },
       {
         'title': 'Photo Fine-Art Canvas',
         'subtitle': 'High-Res • 16-bit Color • Raw Tiling',
         'icon': Icons.camera_alt_outlined,
+        'type': 'photo',
         'workspace': ActiveWorkspace.photo,
+      },
+      {
+        'title': 'Audio-Only Podcast / Mix',
+        'subtitle': '48 kHz Stereo • Pure Audio Session',
+        'icon': Icons.mic_none_outlined,
+        'type': 'audio',
+        'workspace': ActiveWorkspace.video,
       },
       {
         'title': 'Mobile 9:16 Shorts / Reels',
         'subtitle': '1080×1920 • 60 fps • Smart Frame',
         'icon': Icons.phone_android_outlined,
+        'type': 'video',
         'workspace': ActiveWorkspace.video,
-      },
-      {
-        'title': 'Social 1:1 Square Feed',
-        'subtitle': '1080×1080 • Aspect Presets',
-        'icon': Icons.crop_square,
-        'workspace': ActiveWorkspace.photo,
       },
     ];
 
@@ -254,7 +377,12 @@ class HomeWorkspace extends StatelessWidget {
           itemBuilder: (ctx, idx) {
             final t = templates[idx];
             return InkWell(
-              onTap: () => controller.switchWorkspace(t['workspace'] as ActiveWorkspace),
+              onTap: () {
+                final type = t['type'] as String;
+                final ws = t['workspace'] as ActiveWorkspace;
+                widget.controller.createNewProject(name: t['title'] as String, type: type);
+                widget.controller.switchWorkspace(ws);
+              },
               borderRadius: BorderRadius.circular(10),
               child: Container(
                 padding: const EdgeInsets.all(16),
@@ -309,105 +437,171 @@ class HomeWorkspace extends StatelessWidget {
   }
 
   Widget _buildRecentProjectsGrid(BuildContext context) {
-    final recentProjects = [
-      {
-        'title': 'Golden Hour Coastline Documentary',
-        'type': 'Video (16:9)',
-        'duration': '02:45.000',
-        'modified': 'Today, 11:20 AM',
-        'color': IrisTheme.primaryCyan,
-      },
-      {
-        'title': 'Alpine Peak Panorama Grading',
-        'type': 'Photo (RAW)',
-        'duration': '48 Megapixels',
-        'modified': 'Yesterday',
-        'color': IrisTheme.accentPurple,
-      },
-      {
-        'title': 'Product Teaser (Social Reel)',
-        'type': 'Video (9:16)',
-        'duration': '00:30.000',
-        'modified': 'Oct 17, 2026',
-        'color': IrisTheme.accentGreen,
-      },
-    ];
+    return FutureBuilder<List<RecentProjectItem>>(
+      future: _recentProjectsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()));
+        }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth > 900 ? 3 : 1;
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossAxisCount,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            childAspectRatio: 1.8,
-          ),
-          itemCount: recentProjects.length,
-          itemBuilder: (ctx, idx) {
-            final p = recentProjects[idx];
-            return InkWell(
-              onTap: () => controller.switchWorkspace(ActiveWorkspace.video),
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: IrisTheme.surfaceMid,
               borderRadius: BorderRadius.circular(10),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: IrisTheme.surfaceMid,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: IrisTheme.border),
+              border: Border.all(color: IrisTheme.border),
+            ),
+            child: Column(
+              children: [
+                const Icon(Icons.folder_open, size: 36, color: IrisTheme.textMuted),
+                const SizedBox(height: 12),
+                const Text(
+                  'No Saved Projects Yet',
+                  style: TextStyle(color: IrisTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(height: 4),
+                const Text(
+                  'Projects saved to disk will appear here with instant reopening and relinking.',
+                  style: TextStyle(color: IrisTheme.textMuted, fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: (p['color'] as Color).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            p['type'] as String,
-                            style: TextStyle(
-                              color: p['color'] as Color,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          p['duration'] as String,
-                          style: const TextStyle(
-                            color: IrisTheme.textMuted,
-                            fontSize: 11,
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Spacer(),
-                    Text(
-                      p['title'] as String,
-                      style: const TextStyle(
-                        color: IrisTheme.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.folder_open, size: 14),
+                      label: const Text('Open Project From Disk'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: IrisTheme.primaryCyan,
+                        side: const BorderSide(color: IrisTheme.primaryCyan),
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                      onPressed: _openProjectFromDisk,
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Last modified: ${p['modified']}',
-                      style: const TextStyle(color: IrisTheme.textMuted, fontSize: 11),
+                    const SizedBox(width: 12),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.play_circle_outline, size: 14),
+                      label: const Text('Explore Showcase Demo'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: IrisTheme.primaryCyan,
+                        foregroundColor: Colors.black,
+                      ),
+                      onPressed: () {
+                        widget.controller.loadDemoProject();
+                        widget.controller.switchWorkspace(ActiveWorkspace.video);
+                      },
                     ),
                   ],
                 ),
+              ],
+            ),
+          );
+        }
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final crossAxisCount = constraints.maxWidth > 900 ? 3 : 1;
+            return GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: crossAxisCount,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                childAspectRatio: 1.8,
               ),
+              itemCount: items.length,
+              itemBuilder: (ctx, idx) {
+                final p = items[idx];
+                return InkWell(
+                  onTap: () async {
+                    if (p.isMissing) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Cannot open ${p.projectName}: project file is missing from ${p.projectPath}')),
+                      );
+                      return;
+                    }
+                    final ok = await widget.controller.openProjectFile(p.projectPath);
+                    if (ok && mounted) {
+                      widget.controller.switchWorkspace(
+                        p.projectType == 'photo' ? ActiveWorkspace.photo : ActiveWorkspace.video,
+                      );
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: IrisTheme.surfaceMid,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: p.isMissing ? IrisTheme.accentAmber : IrisTheme.border,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: (p.projectType == 'photo' ? IrisTheme.accentPurple : IrisTheme.primaryCyan)
+                                    .withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                p.projectType.toUpperCase(),
+                                style: TextStyle(
+                                  color: p.projectType == 'photo' ? IrisTheme.accentPurple : IrisTheme.primaryCyan,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            if (p.isMissing)
+                              const Text(
+                                'MISSING ON DISK',
+                                style: TextStyle(color: IrisTheme.accentAmber, fontSize: 10, fontWeight: FontWeight.bold),
+                              )
+                            else
+                              Text(
+                                '${p.assetCount} assets',
+                                style: const TextStyle(color: IrisTheme.textMuted, fontSize: 11),
+                              ),
+                          ],
+                        ),
+                        const Spacer(),
+                        Text(
+                          p.projectName,
+                          style: TextStyle(
+                            color: p.isMissing ? IrisTheme.accentAmber : IrisTheme.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          p.projectPath,
+                          style: const TextStyle(color: IrisTheme.textMuted, fontSize: 10, fontFamily: 'monospace'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Modified: ${p.lastModified.toLocal().toString().split(".")[0]}',
+                          style: const TextStyle(color: IrisTheme.textSecondary, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             );
           },
         );
@@ -416,6 +610,8 @@ class HomeWorkspace extends StatelessWidget {
   }
 
   Widget _buildHardwareDiagnosticsCard(BuildContext context) {
+    final hw = widget.controller.hardwareInfo;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -427,15 +623,34 @@ class HomeWorkspace extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            children: const [
-              Icon(Icons.memory, color: IrisTheme.primaryCyan, size: 20),
-              SizedBox(width: 10),
-              Text(
+            children: [
+              const Icon(Icons.memory, color: IrisTheme.primaryCyan, size: 20),
+              const SizedBox(width: 10),
+              const Text(
                 'Hardware Acceleration & Memory Diagnostics',
                 style: TextStyle(
                   color: IrisTheme.textPrimary,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: hw.isAvailable ? IrisTheme.accentGreen.withValues(alpha: 0.15) : IrisTheme.accentAmber.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: hw.isAvailable ? IrisTheme.accentGreen : IrisTheme.accentAmber,
+                  ),
+                ),
+                child: Text(
+                  hw.isAvailable ? 'ACTIVE' : 'SOFTWARE FALLBACK',
+                  style: TextStyle(
+                    color: hw.isAvailable ? IrisTheme.accentGreen : IrisTheme.accentAmber,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -445,11 +660,12 @@ class HomeWorkspace extends StatelessWidget {
             spacing: 24,
             runSpacing: 12,
             children: [
-              _buildDiagItem('Hardware Decoder', 'Windows Media Foundation (Active)'),
-              _buildDiagItem('GPU Interop Surface', 'Direct3D 11 Shared Texture Registrar'),
-              _buildDiagItem('Cache Memory Budget', '512 MB LRU Bounded (RAM: 118 MB idle)'),
-              _buildDiagItem('Thread Pool', 'Rayon SIMD Multi-Core (Parallelism: Active)'),
-              _buildDiagItem('Crash Protection', 'Write-Ahead-Log Journaling (.iris-journal)'),
+              _buildDiagItem('Detected GPU', hw.deviceName),
+              _buildDiagItem('Hardware API', hw.backendName),
+              _buildDiagItem('Zero-Copy Surface', hw.supportsZeroCopy ? 'Active (DirectX Surface Interop)' : 'Emulated (CPU Buffers)'),
+              _buildDiagItem('Max Stream Limit', '${hw.maxStreams} concurrent streams'),
+              _buildDiagItem('Thread Pool', 'Rayon SIMD Multi-Core (Active)'),
+              _buildDiagItem('Crash Resilience', 'Write-Ahead-Log Journal (.iris-journal)'),
             ],
           ),
         ],

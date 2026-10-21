@@ -11,6 +11,7 @@ class ExportJob {
   ExportStatus status;
   double progressPercent;
   double currentFps;
+  int fileSizeBytes;
   String? errorMessage;
 
   ExportJob({
@@ -24,6 +25,7 @@ class ExportJob {
     this.status = ExportStatus.queued,
     this.progressPercent = 0.0,
     this.currentFps = 0.0,
+    this.fileSizeBytes = 0,
     this.errorMessage,
   });
 }

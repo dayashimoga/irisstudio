@@ -47,9 +47,10 @@ impl HardwareDeviceContext {
     pub fn detect() -> Self {
         #[cfg(target_os = "windows")]
         {
+            let device_name = Self::detect_windows_gpu();
             Self {
                 backend: HardwareBackendKind::D3D11VA,
-                device_name: "Direct3D 11 Hardware Decoder".into(),
+                device_name,
                 supports_zero_copy: true,
                 max_width: 8192,
                 max_height: 4320,
@@ -128,6 +129,35 @@ impl HardwareDeviceContext {
                 is_available: false,
             }
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn detect_windows_gpu() -> String {
+        if let Ok(output) = std::process::Command::new("reg")
+            .args([
+                "query",
+                r"HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000",
+                "/v",
+                "DriverDesc",
+            ])
+            .output()
+        {
+            if output.status.success() {
+                let s = String::from_utf8_lossy(&output.stdout);
+                for line in s.lines() {
+                    if line.contains("DriverDesc") {
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        if parts.len() >= 3 {
+                            let name = parts[2..].join(" ");
+                            if !name.trim().is_empty() {
+                                return name.trim().to_string();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        "Direct3D 11 Hardware Decoder".to_string()
     }
 }
 

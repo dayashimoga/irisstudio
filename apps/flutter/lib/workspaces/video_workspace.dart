@@ -4,65 +4,93 @@ import '../bridge/iris_engine_controller.dart';
 import '../models/project_model.dart';
 import '../theme/iris_theme.dart';
 import '../widgets/audio_meters.dart';
+import '../widgets/media_bin_panel.dart';
 import '../widgets/timecode_display.dart';
 
-class VideoWorkspace extends StatelessWidget {
+class VideoWorkspace extends StatefulWidget {
   final IrisEngineController controller;
 
   const VideoWorkspace({super.key, required this.controller});
 
   @override
+  State<VideoWorkspace> createState() => _VideoWorkspaceState();
+}
+
+class _VideoWorkspaceState extends State<VideoWorkspace> {
+  bool _isMediaBinOpen = false;
+  IrisEngineController get controller => widget.controller;
+
+  @override
   Widget build(BuildContext context) {
+    final controller = widget.controller;
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
-        return Column(
+        final isAudioOnly = !controller.project.tracks.any((t) => t.kind == TrackKindModel.video);
+
+        return Row(
           children: [
-            // Top Section: Preview Player (Left) + Inspector / Audio Meters (Right)
+            // Left Collapsible Media Bin
+            if (_isMediaBinOpen)
+              SizedBox(
+                width: 250,
+                child: MediaBinPanel(controller: controller),
+              ),
+
+            // Main Editor Section (Preview / Audio Deck + Timeline)
             Expanded(
-              flex: 5,
-              child: Row(
+              child: Column(
                 children: [
-                  // Player & Transport
+                  // Top Section: Preview Player (Left) + Inspector / Audio Meters (Right)
                   Expanded(
-                    flex: 7,
-                    child: _buildPlayerSection(context),
-                  ),
+                    flex: 5,
+                    child: Row(
+                      children: [
+                        // Player & Transport or Audio Master Deck
+                        Expanded(
+                          flex: 7,
+                          child: isAudioOnly
+                              ? _buildAudioMasterSection(context)
+                              : _buildPlayerSection(context),
+                        ),
 
-                  // Audio VU Meters
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: AudioMeters(
-                      leftDbfs: controller.leftDbfs,
-                      rightDbfs: controller.rightDbfs,
-                      peakLeft: controller.peakLeft,
-                      peakRight: controller.peakRight,
-                      isVertical: true,
+                        // Audio VU Meters
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: AudioMeters(
+                            leftDbfs: controller.leftDbfs,
+                            rightDbfs: controller.rightDbfs,
+                            peakLeft: controller.peakLeft,
+                            peakRight: controller.peakRight,
+                            isVertical: true,
+                          ),
+                        ),
+
+                        // Clip Inspector Panel
+                        Container(
+                          width: 290,
+                          decoration: const BoxDecoration(
+                            color: IrisTheme.surfaceDark,
+                            border: Border(left: BorderSide(color: IrisTheme.border)),
+                          ),
+                          child: _buildInspectorPanel(context),
+                        ),
+                      ],
                     ),
                   ),
 
-                  // Clip Inspector Panel
-                  Container(
-                    width: 290,
-                    decoration: const BoxDecoration(
-                      color: IrisTheme.surfaceDark,
-                      border: Border(left: BorderSide(color: IrisTheme.border)),
+                  // Timeline Section (Multitrack Tracks, Playhead, Clips)
+                  Expanded(
+                    flex: 4,
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        color: IrisTheme.background,
+                        border: Border(top: BorderSide(color: IrisTheme.border)),
+                      ),
+                      child: _buildTimelineSection(context),
                     ),
-                    child: _buildInspectorPanel(context),
                   ),
                 ],
-              ),
-            ),
-
-            // Timeline Section (Multitrack Tracks, Playhead, Clips)
-            Expanded(
-              flex: 4,
-              child: Container(
-                decoration: const BoxDecoration(
-                  color: IrisTheme.background,
-                  border: Border(top: BorderSide(color: IrisTheme.border)),
-                ),
-                child: _buildTimelineSection(context),
               ),
             ),
           ],
@@ -231,101 +259,259 @@ class VideoWorkspace extends StatelessWidget {
           ),
 
           // Transport Toolbar
+          _buildTransportToolbar(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAudioMasterSection(BuildContext context) {
+    final controller = widget.controller;
+    return Container(
+      color: IrisTheme.background,
+      child: Column(
+        children: [
+          // Audio Master Header Bar
           Container(
-            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: const BoxDecoration(
               color: IrisTheme.surfaceDark,
-              border: Border(top: BorderSide(color: IrisTheme.border)),
+              border: Border(bottom: BorderSide(color: IrisTheme.border)),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                // Step back 1 frame
-                IconButton(
-                  icon: const Icon(Icons.skip_previous, size: 18),
-                  tooltip: 'Step Back 1 Frame',
-                  onPressed: () => controller.stepFrame(-1),
-                ),
-
-                // Play / Pause
-                IconButton(
-                  icon: Icon(
-                    controller.isPlaying ? Icons.pause : Icons.play_arrow,
-                    size: 22,
-                    color: IrisTheme.primaryCyan,
-                  ),
-                  tooltip: 'Play / Pause (Space)',
-                  onPressed: controller.togglePlayPause,
-                ),
-
-                // Step forward 1 frame
-                IconButton(
-                  icon: const Icon(Icons.skip_next, size: 18),
-                  tooltip: 'Step Forward 1 Frame',
-                  onPressed: () => controller.stepFrame(1),
-                ),
-
-                const SizedBox(width: 16),
-                const VerticalDivider(width: 1, indent: 10, endIndent: 10),
-                const SizedBox(width: 16),
-
-                // Split Clip Tool
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.call_split, size: 14),
-                  label: const Text('Split (S)', style: TextStyle(fontSize: 11)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: IrisTheme.surfaceLight,
-                    foregroundColor: IrisTheme.textPrimary,
-                    elevation: 0,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  onPressed: controller.splitClipAtPlayhead,
-                ),
-
+                const Icon(Icons.graphic_eq, size: 16, color: IrisTheme.primaryCyan),
                 const SizedBox(width: 8),
-
-                // Ripple Delete
-                IconButton(
-                  icon: const Icon(Icons.delete_sweep, size: 18),
-                  tooltip: 'Ripple Delete (Shift+Del)',
-                  onPressed: controller.selectedClip != null
-                      ? controller.rippleDeleteSelected
-                      : null,
+                const Text(
+                  'AUDIO MASTER WORKSTATION',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: IrisTheme.textPrimary,
+                    letterSpacing: 0.8,
+                  ),
                 ),
-
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: IrisTheme.surfaceLight,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: const Text(
+                    '48 kHz • 24-bit Stereo PCM',
+                    style: TextStyle(fontSize: 10, color: IrisTheme.textMuted),
+                  ),
+                ),
                 const Spacer(),
-
-                // Snapping toggle
                 IconButton(
                   icon: Icon(
-                    Icons.grid_on,
-                    size: 18,
-                    color: controller.isSnappingEnabled
-                        ? IrisTheme.primaryCyan
-                        : IrisTheme.textMuted,
+                    _isMediaBinOpen ? Icons.video_library : Icons.video_library_outlined,
+                    size: 16,
+                    color: _isMediaBinOpen ? IrisTheme.primaryCyan : IrisTheme.textMuted,
                   ),
-                  tooltip: 'Timeline Snapping',
-                  onPressed: controller.toggleSnapping,
+                  tooltip: _isMediaBinOpen ? 'Hide Media Bin' : 'Show Media Bin',
+                  onPressed: () => setState(() => _isMediaBinOpen = !_isMediaBinOpen),
                 ),
-
-                const SizedBox(width: 12),
-
-                // Zoom Slider
-                const Icon(Icons.zoom_out, size: 14, color: IrisTheme.textMuted),
-                SizedBox(
-                  width: 90,
-                  child: Slider(
-                    value: controller.timelineZoom,
-                    min: 0.2,
-                    max: 5.0,
-                    onChanged: controller.setTimelineZoom,
-                  ),
-                ),
-                const Icon(Icons.zoom_in, size: 14, color: IrisTheme.textMuted),
               ],
             ),
           ),
+
+          // Master Waveform & Dynamics Viewport
+          Expanded(
+            child: Container(
+              margin: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: IrisTheme.surfaceDark,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: IrisTheme.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          TimecodeDisplay(
+                            seconds: controller.playheadSeconds,
+                            fps: controller.project.fps,
+                          ),
+                          const SizedBox(width: 16),
+                          Text(
+                            controller.isPlaying ? 'PLAYING (LIVE MIX)' : 'STOPPED',
+                            style: TextStyle(
+                              color: controller.isPlaying ? IrisTheme.accentGreen : IrisTheme.textMuted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          const Text('Master Peak: ', style: TextStyle(color: IrisTheme.textMuted, fontSize: 11)),
+                          Text(
+                            '${controller.leftDbfs.toStringAsFixed(1)} dBFS',
+                            style: const TextStyle(
+                              color: IrisTheme.primaryCyan,
+                              fontSize: 11,
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: IrisTheme.border),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: CustomPaint(
+                          size: Size.infinite,
+                          painter: _AudioMasterDeckPainter(
+                            playheadSeconds: controller.playheadSeconds,
+                            totalDuration: controller.project.totalDuration,
+                            leftDbfs: controller.leftDbfs,
+                            rightDbfs: controller.rightDbfs,
+                            isPlaying: controller.isPlaying,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Transport Toolbar
+          _buildTransportToolbar(context),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTransportToolbar(BuildContext context) {
+    final controller = widget.controller;
+    return Container(
+      height: 44,
+      decoration: const BoxDecoration(
+        color: IrisTheme.surfaceDark,
+        border: Border(top: BorderSide(color: IrisTheme.border)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            // Media Bin Toggle
+            IconButton(
+              icon: Icon(
+                _isMediaBinOpen ? Icons.video_library : Icons.video_library_outlined,
+                size: 18,
+                color: _isMediaBinOpen ? IrisTheme.primaryCyan : IrisTheme.textMuted,
+              ),
+              tooltip: _isMediaBinOpen ? 'Hide Media Bin' : 'Show Media Bin',
+              onPressed: () => setState(() => _isMediaBinOpen = !_isMediaBinOpen),
+            ),
+            const SizedBox(width: 8),
+            const VerticalDivider(width: 1, indent: 10, endIndent: 10),
+            const SizedBox(width: 8),
+
+            // Step back 1 frame
+            IconButton(
+              icon: const Icon(Icons.skip_previous, size: 18),
+              tooltip: 'Step Back 1 Frame',
+              onPressed: () => controller.stepFrame(-1),
+            ),
+
+            // Play / Pause
+            IconButton(
+              icon: Icon(
+                controller.isPlaying ? Icons.pause : Icons.play_arrow,
+                size: 22,
+                color: IrisTheme.primaryCyan,
+              ),
+              tooltip: 'Play / Pause (Space)',
+              onPressed: controller.togglePlayPause,
+            ),
+
+            // Step forward 1 frame
+            IconButton(
+              icon: const Icon(Icons.skip_next, size: 18),
+              tooltip: 'Step Forward 1 Frame',
+              onPressed: () => controller.stepFrame(1),
+            ),
+
+            const SizedBox(width: 16),
+            const VerticalDivider(width: 1, indent: 10, endIndent: 10),
+            const SizedBox(width: 16),
+
+            // Split Clip Tool
+            ElevatedButton.icon(
+              icon: const Icon(Icons.call_split, size: 14),
+              label: const Text('Split (S)', style: TextStyle(fontSize: 11)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: IrisTheme.surfaceLight,
+                foregroundColor: IrisTheme.textPrimary,
+                elevation: 0,
+                visualDensity: VisualDensity.compact,
+              ),
+              onPressed: controller.splitClipAtPlayhead,
+            ),
+
+            const SizedBox(width: 8),
+
+            // Ripple Delete
+            IconButton(
+              icon: const Icon(Icons.delete_sweep, size: 18),
+              tooltip: 'Ripple Delete (Shift+Del)',
+              onPressed: controller.selectedClip != null
+                  ? controller.rippleDeleteSelected
+                  : null,
+            ),
+
+            const SizedBox(width: 24),
+
+            // Snapping toggle
+            IconButton(
+              icon: Icon(
+                Icons.grid_on,
+                size: 18,
+                color: controller.isSnappingEnabled
+                    ? IrisTheme.primaryCyan
+                    : IrisTheme.textMuted,
+              ),
+              tooltip: 'Timeline Snapping',
+              onPressed: controller.toggleSnapping,
+            ),
+
+            const SizedBox(width: 12),
+
+            // Zoom Slider
+            const Icon(Icons.zoom_out, size: 14, color: IrisTheme.textMuted),
+            SizedBox(
+              width: 90,
+              child: Slider(
+                value: controller.timelineZoom,
+                min: 0.2,
+                max: 5.0,
+                onChanged: controller.setTimelineZoom,
+              ),
+            ),
+            const Icon(Icons.zoom_in, size: 14, color: IrisTheme.textMuted),
+          ],
+        ),
       ),
     );
   }
@@ -340,7 +526,6 @@ class VideoWorkspace extends StatelessWidget {
 
   Widget _buildMasterInspector(BuildContext context) {
     final copyPct = controller.streamCopyPercentage;
-    final speedup = controller.estimatedSpeedup;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -374,34 +559,33 @@ class VideoWorkspace extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Expanded(
-                      child: Row(
-                        children: [
-                          Icon(Icons.bolt, size: 14, color: IrisTheme.primaryCyan),
-                          SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              'STREAM COPY',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: IrisTheme.primaryCyan,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
+                    Icon(
+                      copyPct > 0 ? Icons.bolt : Icons.filter_vintage,
+                      size: 14,
+                      color: copyPct > 0 ? IrisTheme.primaryCyan : IrisTheme.accentAmber,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'STREAM COPY',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: copyPct > 0 ? IrisTheme.primaryCyan : IrisTheme.accentAmber,
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 4),
                     Text(
-                      '${speedup.toStringAsFixed(1)}x Speedup',
-                      style: const TextStyle(
+                      copyPct > 0
+                          ? '${(1.0 + (copyPct / 10.0)).toStringAsFixed(1)}x Speedup'
+                          : '1.0x Speedup',
+                      style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w600,
-                        color: IrisTheme.accentGreen,
+                        color: copyPct > 0 ? IrisTheme.accentGreen : IrisTheme.textMuted,
                       ),
                     ),
                   ],
@@ -410,15 +594,19 @@ class VideoWorkspace extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(2),
                   child: LinearProgressIndicator(
-                    value: copyPct / 100.0,
+                    value: (copyPct / 100.0).clamp(0.0, 1.0),
                     minHeight: 4,
                     backgroundColor: IrisTheme.surfaceMid,
-                    valueColor: const AlwaysStoppedAnimation(IrisTheme.primaryCyan),
+                    valueColor: AlwaysStoppedAnimation(
+                      copyPct > 0 ? IrisTheme.primaryCyan : IrisTheme.accentAmber,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '${copyPct.toStringAsFixed(1)}% unedited cuts direct stream-copy passthrough.',
+                  copyPct > 0
+                      ? '${copyPct.toStringAsFixed(1)}% of sequence duration has clean cut boundaries eligible for direct stream-copy.'
+                      : 'Active spatial transforms, grading, transitions, or mixed frame rates require timeline compositor re-encoding.',
                   style: const TextStyle(fontSize: 10, color: IrisTheme.textMuted),
                 ),
               ],
@@ -1321,7 +1509,9 @@ class VideoWorkspace extends StatelessWidget {
                                                 const Spacer(),
                                                 if (isAudio)
                                                   CustomPaint(
-                                                    painter: _WaveformMiniPainter(),
+                                                    painter: _WaveformMiniPainter(
+                                                      peaks: widget.controller.getWaveformPeaksForClip(clip),
+                                                    ),
                                                     size: Size(clipWidth - 12, 16),
                                                   ),
                                               ],
@@ -2710,24 +2900,142 @@ class _TimelineRulerPainter extends CustomPainter {
 }
 
 class _WaveformMiniPainter extends CustomPainter {
+  final List<double>? peaks;
+  _WaveformMiniPainter({this.peaks});
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = IrisTheme.accentGreen.withValues(alpha: 0.8)
-      ..strokeWidth = 1.0;
+      ..color = IrisTheme.accentGreen.withValues(alpha: 0.85)
+      ..strokeWidth = 1.2;
 
-    final step = 4.0;
-    final count = (size.width / step).floor();
-    for (int i = 0; i < count; i++) {
-      final x = i * step;
-      final h = (math.sin(i * 0.4).abs() * size.height).clamp(2.0, size.height);
-      final y0 = (size.height - h) / 2;
-      canvas.drawLine(Offset(x, y0), Offset(x, y0 + h), paint);
+    if (peaks != null && peaks!.isNotEmpty) {
+      final count = peaks!.length;
+      final step = size.width / count;
+      for (int i = 0; i < count; i++) {
+        final x = i * step;
+        final h = (peaks![i] * size.height).clamp(1.5, size.height);
+        final y0 = (size.height - h) / 2;
+        canvas.drawLine(Offset(x, y0), Offset(x, y0 + h), paint);
+      }
+    } else {
+      final step = 3.5;
+      final count = (size.width / step).floor();
+      for (int i = 0; i < count; i++) {
+        final x = i * step;
+        final factor = ((i * 17 + 7) % 31) / 31.0;
+        final h = (factor * size.height).clamp(2.0, size.height * 0.9);
+        final y0 = (size.height - h) / 2;
+        canvas.drawLine(Offset(x, y0), Offset(x, y0 + h), paint);
+      }
     }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _WaveformMiniPainter oldDelegate) =>
+      oldDelegate.peaks != peaks;
+}
+
+class _AudioMasterDeckPainter extends CustomPainter {
+  final double playheadSeconds;
+  final double totalDuration;
+  final double leftDbfs;
+  final double rightDbfs;
+  final bool isPlaying;
+
+  _AudioMasterDeckPainter({
+    required this.playheadSeconds,
+    required this.totalDuration,
+    required this.leftDbfs,
+    required this.rightDbfs,
+    required this.isPlaying,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bgPaint = Paint()..color = const Color(0xFF0F121A);
+    canvas.drawRect(Offset.zero & size, bgPaint);
+
+    final gridPaint = Paint()
+      ..color = const Color(0xFF1E2633)
+      ..strokeWidth = 1.0;
+
+    final centerY = size.height / 2;
+    canvas.drawLine(Offset(0, centerY), Offset(size.width, centerY), gridPaint);
+
+    final dbLines = [centerY - size.height * 0.25, centerY + size.height * 0.25];
+    for (final y in dbLines) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    final sigPaint = Paint()
+      ..color = IrisTheme.primaryCyan.withValues(alpha: 0.8)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+
+    final normL = ((leftDbfs + 60.0) / 60.0).clamp(0.0, 1.0);
+    final normR = ((rightDbfs + 60.0) / 60.0).clamp(0.0, 1.0);
+
+    final pathL = Path();
+    final pathR = Path();
+    final step = 4.0;
+    final count = (size.width / step).floor();
+
+    for (int i = 0; i < count; i++) {
+      final x = i * step;
+      final waveL = isPlaying
+          ? math.sin((x * 0.05) + (playheadSeconds * 12.0)) * normL * (centerY * 0.8)
+          : (math.sin(x * 0.03) * 0.15 * centerY);
+      final yL = (centerY / 2) + waveL;
+
+      final waveR = isPlaying
+          ? math.sin((x * 0.05) + (playheadSeconds * 12.0) + 1.2) * normR * (centerY * 0.8)
+          : (math.sin(x * 0.03 + 1.0) * 0.15 * centerY);
+      final yR = (centerY + centerY / 2) + waveR;
+
+      if (i == 0) {
+        pathL.moveTo(x, yL);
+        pathR.moveTo(x, yR);
+      } else {
+        pathL.lineTo(x, yL);
+        pathR.lineTo(x, yR);
+      }
+    }
+
+    canvas.drawPath(pathL, sigPaint);
+    sigPaint.color = IrisTheme.accentGreen.withValues(alpha: 0.8);
+    canvas.drawPath(pathR, sigPaint);
+
+    if (totalDuration > 0) {
+      final playX = (playheadSeconds / totalDuration) * size.width;
+      final playPaint = Paint()
+        ..color = IrisTheme.accentAmber
+        ..strokeWidth = 2.0;
+      canvas.drawLine(Offset(playX, 0), Offset(playX, size.height), playPaint);
+    }
+
+    _drawLabel(canvas, 'CH 1 (LEFT)', const Offset(8, 8));
+    _drawLabel(canvas, 'CH 2 (RIGHT)', Offset(8, centerY + 8));
+  }
+
+  void _drawLabel(Canvas canvas, String text, Offset offset) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+          color: IrisTheme.textMuted,
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.5,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, offset);
+  }
+
+  @override
+  bool shouldRepaint(covariant _AudioMasterDeckPainter oldDelegate) => true;
 }
 
 class _ColorScopePainter extends CustomPainter {

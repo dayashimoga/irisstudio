@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../bridge/iris_engine_controller.dart';
+import '../bridge/iris_ffi_bindings.dart';
 import '../models/photo_state.dart';
 import '../theme/iris_theme.dart';
+import '../widgets/media_picker_dialog.dart';
 
 class PhotoWorkspace extends StatefulWidget {
   final IrisEngineController controller;
@@ -393,6 +396,54 @@ class _PhotoWorkspaceState extends State<PhotoWorkspace> {
 }
 
   Widget _buildInteractivePhoto() {
+    if (widget.controller.uiImage == null) {
+      return Container(
+        width: 800,
+        height: 500,
+        decoration: BoxDecoration(
+          color: IrisTheme.surfaceDark,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: IrisTheme.border),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.photo_size_select_actual_outlined, size: 56, color: IrisTheme.textMuted),
+              const SizedBox(height: 16),
+              const Text(
+                'No Photo Open',
+                style: TextStyle(
+                  color: IrisTheme.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Open a photo from disk (JPEG, PNG, WebP) to begin\nhardware-accelerated linear sRGB editing.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: IrisTheme.textSecondary, fontSize: 12),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.folder_open, size: 16),
+                label: const Text('Open Photo From Disk'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: IrisTheme.primaryCyan,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                ),
+                onPressed: _showOpenPhotoDialog,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final width = widget.controller.photoWidth.toDouble();
+    final height = widget.controller.photoHeight.toDouble();
     final adj = widget.controller.photoAdjustments;
 
     return Transform.rotate(
@@ -402,8 +453,8 @@ class _PhotoWorkspaceState extends State<PhotoWorkspace> {
         scaleX: widget.controller.photoFlipH ? -1.0 : 1.0,
         scaleY: widget.controller.photoFlipV ? -1.0 : 1.0,
         child: Container(
-          width: 800,
-          height: 500,
+          width: width > 0 ? width : 800,
+          height: height > 0 ? height : 500,
           decoration: BoxDecoration(
             color: IrisTheme.surfaceDark,
             boxShadow: [
@@ -416,15 +467,25 @@ class _PhotoWorkspaceState extends State<PhotoWorkspace> {
           ),
           child: Stack(
             children: [
-              // Custom Painter simulating the photo with current parametric adjustments
+              // Full processed image
               Positioned.fill(
-                child: CustomPaint(
-                  painter: _SyntheticPhotoPainter(
-                    adjustments: adj,
-                    straighten: widget.controller.photoStraighten,
-                  ),
+                child: RawImage(
+                  image: widget.controller.uiImage,
+                  fit: BoxFit.contain,
                 ),
               ),
+
+              // Before / After Split View
+              if (widget.controller.isBeforeAfterSplit && widget.controller.uiImageOriginal != null)
+                Positioned.fill(
+                  child: ClipRect(
+                    clipper: _SplitClipper(widget.controller.splitPosition),
+                    child: RawImage(
+                      image: widget.controller.uiImageOriginal,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
 
               // Vignette Overlay Simulation
               if (adj.vignette != 0.0)
@@ -598,7 +659,7 @@ class _PhotoWorkspaceState extends State<PhotoWorkspace> {
               border: Border.all(color: IrisTheme.border),
             ),
             child: CustomPaint(
-              painter: _HistogramPainter(),
+              painter: _HistogramPainter(histogram: widget.controller.photoHistogram),
               size: const Size(double.infinity, 60),
             ),
           ),
@@ -1305,80 +1366,65 @@ class _PhotoWorkspaceState extends State<PhotoWorkspace> {
     );
   }
 
-  void _showOpenPhotoDialog() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: IrisTheme.surfaceDark,
-          title: const Text('Open Photo', style: TextStyle(color: IrisTheme.textPrimary, fontSize: 16)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Select format to import into the hardware-accelerated photo canvas:',
-                style: TextStyle(color: IrisTheme.textSecondary, fontSize: 12),
-              ),
-              const SizedBox(height: 12),
-              ListTile(
-                leading: const Icon(Icons.image, color: IrisTheme.primaryCyan),
-                title: const Text('Sample Landscape (JPEG / 4K)', style: TextStyle(fontSize: 13)),
-                subtitle: const Text('EXIF Tag 1 (Normal Orientation), sRGB Linear', style: TextStyle(fontSize: 11)),
-                onTap: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Imported Landscape 4K Photo successfully')),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.image_outlined, color: Colors.orangeAccent),
-                title: const Text('Portrait with Flash (PNG)', style: TextStyle(fontSize: 13)),
-                subtitle: const Text('High Red/GB Ratio for Red-Eye Correction', style: TextStyle(fontSize: 11)),
-                onTap: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Imported Flash Portrait Photo successfully')),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_library_outlined, color: Colors.purpleAccent),
-                title: const Text('WebP Lossless Asset', style: TextStyle(fontSize: 13)),
-                subtitle: const Text('Modern web format with alpha channel', style: TextStyle(fontSize: 11)),
-                onTap: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Imported WebP Asset successfully')),
-                  );
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-          ],
-        );
-      },
+  Future<void> _showOpenPhotoDialog() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final selectedPaths = await MediaPickerDialog.show(
+      context,
+      title: 'Open Photo (Native Disk Probe)',
+      initialFilter: FileFilterMode.photos,
+      allowMultiple: false,
     );
+    if (selectedPaths != null && selectedPaths.isNotEmpty) {
+      final path = selectedPaths.first;
+      final ok = await widget.controller.loadPhoto(path);
+      if (!mounted) return;
+      if (ok) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Loaded ${path.split(Platform.pathSeparator).last} (${widget.controller.photoWidth}x${widget.controller.photoHeight})',
+            ),
+            backgroundColor: IrisTheme.accentGreen,
+          ),
+        );
+      } else {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Failed to decode $path. Unsupported raster or corrupt image.'),
+            backgroundColor: IrisTheme.accentRed,
+          ),
+        );
+      }
+    }
   }
 
-  void _showExportPhotoDialog() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        String format = 'JPEG';
-        int quality = 90;
+  Future<void> _showExportPhotoDialog() async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (widget.controller.uiImage == null) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('No photo loaded to export. Please open an image first.'),
+          backgroundColor: IrisTheme.accentAmber,
+        ),
+      );
+      return;
+    }
 
+    String format = 'PNG';
+    int quality = 95;
+    final originalPath = widget.controller.currentPhotoPath ?? 'photo';
+    final dir = File(originalPath).parent.path;
+    final baseName = originalPath.split(Platform.pathSeparator).last.split('.').first;
+    String targetPath = '$dir${Platform.pathSeparator}${baseName}_edited.png';
+
+    await showDialog(
+      context: context,
+      builder: (dialogCtx) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
               backgroundColor: IrisTheme.surfaceDark,
-              title: const Text('Export Photo', style: TextStyle(color: IrisTheme.textPrimary, fontSize: 16)),
+              title: const Text('Export Photo to Disk', style: TextStyle(color: IrisTheme.textPrimary, fontSize: 16)),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1386,7 +1432,7 @@ class _PhotoWorkspaceState extends State<PhotoWorkspace> {
                   const Text('Select target format and quality:', style: TextStyle(color: IrisTheme.textSecondary, fontSize: 12)),
                   const SizedBox(height: 12),
                   Row(
-                    children: ['JPEG', 'PNG', 'WebP'].map((f) {
+                    children: ['PNG', 'JPEG', 'WebP'].map((f) {
                       final isSelected = format == f;
                       return Padding(
                         padding: const EdgeInsets.only(right: 8),
@@ -1396,26 +1442,35 @@ class _PhotoWorkspaceState extends State<PhotoWorkspace> {
                           selectedColor: IrisTheme.primaryCyan,
                           backgroundColor: IrisTheme.surfaceLight,
                           labelStyle: TextStyle(color: isSelected ? Colors.black : IrisTheme.textPrimary),
-                          onSelected: (_) => setDialogState(() => format = f),
+                          onSelected: (_) {
+                            setDialogState(() {
+                              format = f;
+                              final ext = f.toLowerCase() == 'jpeg' ? 'jpg' : f.toLowerCase();
+                              targetPath = '$dir${Platform.pathSeparator}${baseName}_edited.$ext';
+                            });
+                          },
                         ),
                       );
                     }).toList(),
                   ),
-                  if (format == 'JPEG') ...[
+                  if (format != 'PNG') ...[
                     const SizedBox(height: 12),
                     Text('Quality: $quality%', style: const TextStyle(fontSize: 11, color: IrisTheme.textSecondary)),
                     Slider(
                       value: quality.toDouble(),
                       min: 10,
                       max: 100,
+                      activeColor: IrisTheme.primaryCyan,
                       onChanged: (v) => setDialogState(() => quality = v.round()),
                     ),
                   ],
+                  const SizedBox(height: 12),
+                  Text('Output file: $targetPath', style: const TextStyle(fontSize: 11, color: IrisTheme.textMuted)),
                 ],
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Navigator.pop(dialogCtx),
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
@@ -1423,11 +1478,31 @@ class _PhotoWorkspaceState extends State<PhotoWorkspace> {
                     backgroundColor: IrisTheme.primaryCyan,
                     foregroundColor: Colors.black,
                   ),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Photo exported successfully as $format! Validated stream integrity.')),
+                  onPressed: () async {
+                    Navigator.pop(dialogCtx);
+                    final formatCode = format == 'PNG' ? 0 : (format == 'JPEG' ? 1 : 2);
+                    final success = await widget.controller.exportPhoto(
+                      outputPath: targetPath,
+                      formatCode: formatCode,
+                      quality: quality,
                     );
+                    if (!mounted) return;
+                    if (success) {
+                      final size = File(targetPath).lengthSync();
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text('Exported successfully: $targetPath ($size bytes)'),
+                          backgroundColor: IrisTheme.accentGreen,
+                        ),
+                      );
+                    } else {
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text('Export failed for $targetPath'),
+                          backgroundColor: IrisTheme.accentRed,
+                        ),
+                      );
+                    }
                   },
                   child: const Text('Export Now'),
                 ),
@@ -1440,25 +1515,38 @@ class _PhotoWorkspaceState extends State<PhotoWorkspace> {
   }
 
   void _showExifMetadataDialog() {
+    final hw = widget.controller.project.hardwareInfo;
+    final w = widget.controller.photoWidth;
+    final h = widget.controller.photoHeight;
+    final mp = w > 0 && h > 0 ? ((w * h) / 1000000.0).toStringAsFixed(2) : '0';
+
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
           backgroundColor: IrisTheme.surfaceDark,
-          title: const Text('EXIF & Color Management', style: TextStyle(color: IrisTheme.textPrimary, fontSize: 16)),
+          title: const Text('EXIF & Native Pipeline Diagnostics', style: TextStyle(color: IrisTheme.textPrimary, fontSize: 16)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
-              Text('Resolution: 3840 x 2160 (4K UHD, 8.3 MP)', style: TextStyle(color: IrisTheme.textPrimary, fontSize: 12)),
-              SizedBox(height: 4),
-              Text('Color Space: Rec.709 / sRGB Linear Float32', style: TextStyle(color: IrisTheme.textSecondary, fontSize: 12)),
-              SizedBox(height: 4),
-              Text('EXIF Orientation: Tag 1 (Horizontal Normal)', style: TextStyle(color: IrisTheme.textSecondary, fontSize: 12)),
-              SizedBox(height: 4),
-              Text('Bit Depth: 32-bit RGBA (8-bit per channel)', style: TextStyle(color: IrisTheme.textSecondary, fontSize: 12)),
-              SizedBox(height: 4),
-              Text('Tiled Pipeline: Active (512x512 tile chunks)', style: TextStyle(color: IrisTheme.primaryCyan, fontSize: 12)),
+            children: [
+              Text('Source File: ${widget.controller.currentPhotoPath ?? "None (No photo open)"}',
+                  style: const TextStyle(color: IrisTheme.textPrimary, fontSize: 12)),
+              const SizedBox(height: 6),
+              Text('Resolution: ${w}x$h ($mp Megapixels)',
+                  style: const TextStyle(color: IrisTheme.textSecondary, fontSize: 12)),
+              const SizedBox(height: 6),
+              const Text('Color Space: Rec.709 / sRGB Linear Float32 internal',
+                  style: TextStyle(color: IrisTheme.textSecondary, fontSize: 12)),
+              const SizedBox(height: 6),
+              const Text('Pixel Format: 32-bit RGBA (8-bit per channel linear)',
+                  style: TextStyle(color: IrisTheme.textSecondary, fontSize: 12)),
+              const SizedBox(height: 6),
+              Text('Hardware Acceleration: ${hw.deviceName} (${hw.backendName})',
+                  style: const TextStyle(color: IrisTheme.primaryCyan, fontSize: 12)),
+              const SizedBox(height: 6),
+              const Text('Vector Pipeline: SIMD AVX2 / SSE4.1 zero-copy tile memory',
+                  style: TextStyle(color: IrisTheme.textSecondary, fontSize: 12)),
             ],
           ),
           actions: [
@@ -1473,71 +1561,17 @@ class _PhotoWorkspaceState extends State<PhotoWorkspace> {
   }
 }
 
-class _SyntheticPhotoPainter extends CustomPainter {
-  final PhotoAdjustments adjustments;
-  final double straighten;
-
-  _SyntheticPhotoPainter({
-    required this.adjustments,
-    required this.straighten,
-  });
+class _SplitClipper extends CustomClipper<Rect> {
+  final double splitRatio;
+  _SplitClipper(this.splitRatio);
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint();
-
-    // Sky gradient with exposure/temperature shift
-    final expShift = (adjustments.exposure * 0.1).clamp(-0.5, 0.5);
-    final tempShift = (adjustments.temperature * 0.003).clamp(-0.3, 0.3);
-
-    final topSky = Color.lerp(
-      const Color(0xFF1E528E),
-      tempShift > 0 ? Colors.amber : Colors.cyan,
-      tempShift.abs(),
-    )!;
-
-    final skyGradient = LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [
-        topSky.withValues(alpha: (1.0 + expShift).clamp(0.2, 1.0)),
-        const Color(0xFFE28B58),
-      ],
-    );
-    paint.shader = skyGradient.createShader(Rect.fromLTWH(0, 0, size.width, size.height * 0.6));
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height * 0.6), paint);
-
-    // Mountain silhouettes
-    paint.shader = null;
-    paint.color = const Color(0xFF1B2332);
-    final path = Path()
-      ..moveTo(0, size.height * 0.65)
-      ..lineTo(size.width * 0.25, size.height * 0.38)
-      ..lineTo(size.width * 0.55, size.height * 0.52)
-      ..lineTo(size.width * 0.85, size.height * 0.32)
-      ..lineTo(size.width, size.height * 0.62)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-    canvas.drawPath(path, paint);
-
-    // Lake reflections
-    final lakeGradient = const LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [
-        Color(0xFF152A4A),
-        Color(0xFF0D1B33),
-      ],
-    );
-    paint.shader = lakeGradient.createShader(
-        Rect.fromLTWH(0, size.height * 0.65, size.width, size.height * 0.35));
-    canvas.drawRect(
-        Rect.fromLTWH(0, size.height * 0.65, size.width, size.height * 0.35), paint);
+  Rect getClip(Size size) {
+    return Rect.fromLTWH(0, 0, size.width * splitRatio.clamp(0.0, 1.0), size.height);
   }
 
   @override
-  bool shouldRepaint(covariant _SyntheticPhotoPainter oldDelegate) => true;
+  bool shouldReclip(covariant _SplitClipper oldClipper) => oldClipper.splitRatio != splitRatio;
 }
 
 class _RetouchStrokesPainter extends CustomPainter {
@@ -1589,37 +1623,63 @@ class _RetouchStrokesPainter extends CustomPainter {
 }
 
 class _HistogramPainter extends CustomPainter {
+  final IrisHistogram histogram;
+  _HistogramPainter({required this.histogram});
+
   @override
   void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+
+    int maxVal = 1;
+    for (int i = 0; i < 256; i++) {
+      if (histogram.rBins[i] > maxVal) maxVal = histogram.rBins[i];
+      if (histogram.gBins[i] > maxVal) maxVal = histogram.gBins[i];
+      if (histogram.bBins[i] > maxVal) maxVal = histogram.bBins[i];
+      if (histogram.lumaBins[i] > maxVal) maxVal = histogram.lumaBins[i];
+    }
+
     final paint = Paint()
-      ..strokeWidth = 1.0
+      ..strokeWidth = 1.2
       ..style = PaintingStyle.stroke;
 
-    paint.color = Colors.redAccent.withValues(alpha: 0.7);
-    _drawCurve(canvas, size, paint, 0.2, 0.7, 0.4);
+    // Draw Red channel
+    paint.color = Colors.redAccent.withValues(alpha: 0.75);
+    _drawBins(canvas, size, paint, histogram.rBins, maxVal);
 
-    paint.color = Colors.greenAccent.withValues(alpha: 0.7);
-    _drawCurve(canvas, size, paint, 0.3, 0.8, 0.35);
+    // Draw Green channel
+    paint.color = Colors.greenAccent.withValues(alpha: 0.75);
+    _drawBins(canvas, size, paint, histogram.gBins, maxVal);
 
-    paint.color = Colors.lightBlueAccent.withValues(alpha: 0.8);
-    _drawCurve(canvas, size, paint, 0.15, 0.6, 0.65);
+    // Draw Blue channel
+    paint.color = Colors.lightBlueAccent.withValues(alpha: 0.85);
+    _drawBins(canvas, size, paint, histogram.bBins, maxVal);
+
+    // Draw Luma channel (white overlay)
+    paint.color = Colors.white.withValues(alpha: 0.4);
+    paint.strokeWidth = 0.8;
+    _drawBins(canvas, size, paint, histogram.lumaBins, maxVal);
   }
 
-  void _drawCurve(Canvas canvas, Size size, Paint paint, double p1, double p2, double p3) {
+  void _drawBins(Canvas canvas, Size size, Paint paint, List<int> bins, int maxVal) {
+    if (bins.length < 256 || maxVal <= 0) return;
     final path = Path();
-    path.moveTo(0, size.height);
-    path.cubicTo(
-      size.width * 0.25,
-      size.height * (1.0 - p1),
-      size.width * 0.5,
-      size.height * (1.0 - p2),
-      size.width * 0.75,
-      size.height * (1.0 - p3),
-    );
-    path.lineTo(size.width, size.height);
+    final dx = size.width / 255.0;
+
+    for (int i = 0; i < 256; i++) {
+      final normalized = (bins[i] / maxVal).clamp(0.0, 1.0);
+      final y = size.height - (normalized * (size.height - 4));
+      final x = i * dx;
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
     canvas.drawPath(path, paint);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _HistogramPainter oldDelegate) {
+    return oldDelegate.histogram != histogram;
+  }
 }
